@@ -2,6 +2,7 @@ import asyncio
 import logging
 
 from app.clients import gdelt_client, semantic_scholar_client, wikipedia_client
+from app.config import get_settings
 from app.ml.model_registry import get_spacy_nlp
 from app.schemas.claim import ExtractedEntity
 from app.schemas.evidence import EvidenceDocument
@@ -68,11 +69,13 @@ async def search_all_sources(
         tasks.append(wikipedia_client.search(entity_query))
         task_names.append("wikipedia(entities)")
 
-    results = await asyncio.gather(*tasks, return_exceptions=True)
+    results = await _gather_within_deadline(tasks, task_names, claim_text)
 
     docs: list[EvidenceDocument] = []
     seen_urls: set[str] = set()
     for name, result in zip(task_names, results):
+        if result is None:
+            continue
         if isinstance(result, Exception):
             logger.warning("Evidence source %r failed for claim %r: %s", name, claim_text, result)
             continue
@@ -84,3 +87,43 @@ async def search_all_sources(
             seen_urls.add(doc.url)
             docs.append(doc)
     return docs
+
+
+async def _gather_within_deadline(tasks, task_names, claim_text):
+    """Run every source concurrently, waiting only as long as it is useful.
+
+    These are free, aggressively throttled APIs: GDELT was measured taking
+    17.8s to return a 429, which by itself accounted for most of a request's
+    latency while contributing no evidence. But a flat deadline is the wrong
+    instrument - cutting it to 0.8s starved 9 of 22 requests of evidence
+    entirely and dropped accuracy from 87% to 40%, because the one source
+    that does answer needs ~0.7s.
+
+    So the wait is adaptive: once any source has returned, the rest get a
+    short grace period and are then abandoned; if nothing has come back yet,
+    waiting longer is strictly better than answering with no evidence, so the
+    hard cap applies instead.
+    """
+    settings = get_settings()
+    wrapped = [asyncio.ensure_future(t) for t in tasks]
+    pending = set(wrapped)
+    done: set = set()
+    deadline = settings.evidence_deadline_seconds
+
+    while pending:
+        timeout = settings.evidence_grace_seconds if done else deadline
+        just_done, pending = await asyncio.wait(
+            pending, timeout=timeout, return_when=asyncio.FIRST_COMPLETED
+        )
+        if not just_done:
+            break  # nothing new arrived within the window
+        done |= just_done
+
+    for task, name in zip(wrapped, task_names):
+        if task in pending:
+            task.cancel()
+            logger.warning("Evidence source %r was too slow for claim %r; continuing without it", name, claim_text)
+    if pending:
+        await asyncio.gather(*pending, return_exceptions=True)
+
+    return [task.exception() or task.result() if task in done else None for task in wrapped]

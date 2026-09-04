@@ -2,7 +2,7 @@ import re
 
 import numpy as np
 
-from app.ml.model_registry import NLI_LABELS, get_nli_model, get_spacy_nlp
+from app.ml.model_registry import NLI_LABELS, get_nli_model, get_sentencizer
 from app.schemas.nli import NLIVerdict
 from app.schemas.ranking import RerankedEvidence
 
@@ -121,7 +121,7 @@ def _split_sentences(text: str) -> list[str]:
     without terminal punctuation are dropped when at least one complete
     sentence is available.
     """
-    nlp = get_spacy_nlp()
+    nlp = get_sentencizer()
     doc = nlp(text)
     sentences = [sent.text.strip() for sent in doc.sents if sent.text.strip()]
 

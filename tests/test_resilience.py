@@ -9,16 +9,19 @@ def _status_error(status_code: int) -> httpx.HTTPStatusError:
     return httpx.HTTPStatusError("error", request=request, response=response)
 
 
-def test_timeout_is_retryable():
-    assert _is_retryable(httpx.TimeoutException("timed out")) is True
+def test_timeout_is_not_retryable():
+    """A timeout has already spent the latency budget; the evidence deadline
+    handles it instead of paying for a second attempt."""
+    assert _is_retryable(httpx.TimeoutException("timed out")) is False
 
 
 def test_connect_error_is_retryable():
     assert _is_retryable(httpx.ConnectError("connection refused")) is True
 
 
-def test_429_is_retryable():
-    assert _is_retryable(_status_error(429)) is True
+def test_429_is_not_retryable():
+    """Throttling will not clear within the retry window."""
+    assert _is_retryable(_status_error(429)) is False
 
 
 def test_5xx_is_retryable():

@@ -13,9 +13,16 @@ class Settings(BaseSettings):
 
     semantic_scholar_api_key: str = ""
 
-    gdelt_timeout_seconds: float = 8.0
-    semantic_scholar_timeout_seconds: float = 8.0
-    wikipedia_timeout_seconds: float = 8.0
+    # Per-source ceilings, all bounded by evidence_deadline_seconds: whatever
+    # has not answered by the deadline is cancelled and the verdict is formed
+    # from the sources that did.
+    gdelt_timeout_seconds: float = 2.5
+    semantic_scholar_timeout_seconds: float = 2.5
+    wikipedia_timeout_seconds: float = 2.5
+    # Hard cap while no source has answered yet; once one has, the others get
+    # only evidence_grace_seconds before they are abandoned.
+    evidence_deadline_seconds: float = 2.5
+    evidence_grace_seconds: float = 0.25
 
     app_env: str = "development"
     log_level: str = "INFO"
