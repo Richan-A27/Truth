@@ -1,0 +1,22 @@
+[
+  {
+    "premise": "Paris is the capital and most populous city of France.",
+    "hypothesis": "France's capital is Paris.",
+    "expected_label": "entailment"
+  },
+  {
+    "premise": "The Earth is an oblate spheroid, slightly flattened at the poles.",
+    "hypothesis": "The Earth is flat.",
+    "expected_label": "contradiction"
+  },
+  {
+    "premise": "The Eiffel Tower is a wrought-iron lattice tower on the Champ de Mars in Paris, France.",
+    "hypothesis": "The Eiffel Tower is located in Berlin, Germany.",
+    "expected_label": "contradiction"
+  },
+  {
+    "premise": "The novel was praised by critics for its vivid characters.",
+    "hypothesis": "The novel features richly drawn characters.",
+    "expected_label": "entailment"
+  }
+]

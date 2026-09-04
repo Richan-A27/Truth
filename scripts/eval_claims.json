@@ -1,0 +1,77 @@
+[
+  {
+    "claim": "The Eiffel Tower is located in Paris, France.",
+    "label": "true-simple",
+    "acceptable": ["likely_true"]
+  },
+  {
+    "claim": "The Eiffel Tower is located in Berlin, Germany.",
+    "label": "false-simple",
+    "acceptable": ["likely_false"]
+  },
+  {
+    "claim": "Water boils at 100 degrees Celsius at sea level.",
+    "label": "true-science",
+    "acceptable": ["likely_true", "mixed"]
+  },
+  {
+    "claim": "The Great Wall of China is visible from space with the naked eye.",
+    "label": "false-myth",
+    "acceptable": ["likely_false"]
+  },
+  {
+    "claim": "The Moon is made of green cheese.",
+    "label": "false-myth",
+    "acceptable": ["likely_false"]
+  },
+  {
+    "claim": "NASA's Perseverance rover landed on Mars in February 2021.",
+    "label": "true-event",
+    "acceptable": ["likely_true"]
+  },
+  {
+    "claim": "Mount Everest is the highest mountain above sea level on Earth.",
+    "label": "true-geography",
+    "acceptable": ["likely_true"]
+  },
+  {
+    "claim": "The Amazon River is located in Europe.",
+    "label": "false-geography",
+    "acceptable": ["likely_false"]
+  },
+  {
+    "claim": "Vaccines cause autism.",
+    "label": "false-health-misinfo",
+    "acceptable": ["likely_false"]
+  },
+  {
+    "claim": "Humans only use ten percent of their brains.",
+    "label": "false-myth",
+    "acceptable": ["likely_false"]
+  },
+  {
+    "claim": "William Shakespeare wrote the play Hamlet.",
+    "label": "true-literature",
+    "acceptable": ["likely_true"]
+  },
+  {
+    "claim": "The human body has 206 bones in adulthood.",
+    "label": "true-biology",
+    "acceptable": ["likely_true", "mixed"]
+  },
+  {
+    "claim": "Albert Einstein developed the theory of general relativity.",
+    "label": "true-science",
+    "acceptable": ["likely_true"]
+  },
+  {
+    "claim": "The Earth is flat.",
+    "label": "false-science",
+    "acceptable": ["likely_false"]
+  },
+  {
+    "claim": "Zorblax the Fourteenth conquered the moons of Kepler-442b in 1873.",
+    "label": "unverifiable-nonsense",
+    "acceptable": ["unverified", "likely_false", "mixed"]
+  }
+]
