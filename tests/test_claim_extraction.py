@@ -5,11 +5,18 @@ import pytest
 from app.pipeline import stage2_claim_extraction
 
 
+def _stub_llm_client(monkeypatch, extract_claims_fn):
+    """Patch the dispatcher itself, not a concrete backend module - which
+    backend get_llm_client() picks depends on the local LLM_BACKEND setting,
+    and patching e.g. gemini_client.extract_claims directly silently no-ops
+    (and the test passes against a totally different code path) when
+    LLM_BACKEND=ollama is set locally."""
+    stub = type("StubClient", (), {"extract_claims": staticmethod(extract_claims_fn)})
+    monkeypatch.setattr("app.pipeline.stage2_claim_extraction.get_llm_client", lambda: stub)
+
+
 def test_extract_claims_parses_gemini_output(monkeypatch):
-    monkeypatch.setattr(
-        "app.clients.gemini_client.extract_claims",
-        lambda content: ["The sky is blue.", "Water boils at 100C at sea level."],
-    )
+    _stub_llm_client(monkeypatch, lambda content: ["The sky is blue.", "Water boils at 100C at sea level."])
 
     claims = stage2_claim_extraction.extract_claims("some article text")
 
@@ -18,7 +25,7 @@ def test_extract_claims_parses_gemini_output(monkeypatch):
 
 
 def test_extract_claims_handles_empty_list(monkeypatch):
-    monkeypatch.setattr("app.clients.gemini_client.extract_claims", lambda content: [])
+    _stub_llm_client(monkeypatch, lambda content: [])
     assert stage2_claim_extraction.extract_claims("no claims here") == []
 
 

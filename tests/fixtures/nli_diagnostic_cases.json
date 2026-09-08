@@ -1,0 +1,128 @@
+[
+  {
+    "category": "A_unrelated_evidence",
+    "claim": "Albert Einstein developed the theory of general relativity.",
+    "evidence": "Bats are winged mammals, the only mammals capable of true and sustained flight.",
+    "expected_label": "neutral"
+  },
+  {
+    "category": "A_unrelated_evidence",
+    "claim": "The Great Wall of China is visible from space with the naked eye.",
+    "evidence": "Cats are popular household pets known for their independence.",
+    "expected_label": "neutral"
+  },
+  {
+    "category": "A_unrelated_evidence",
+    "claim": "Water boils at 100 degrees Celsius at sea level.",
+    "evidence": "The Eiffel Tower was built in 1889 for the World's Fair in Paris.",
+    "expected_label": "neutral"
+  },
+  {
+    "category": "B_explicit_refutation",
+    "claim": "The Earth is flat.",
+    "evidence": "The claim that Earth is flat has been thoroughly debunked by centuries of scientific evidence.",
+    "expected_label": "contradiction"
+  },
+  {
+    "category": "B_explicit_refutation",
+    "claim": "Vaccines cause autism.",
+    "evidence": "The link between vaccines and autism has been discredited by numerous large-scale scientific studies.",
+    "expected_label": "contradiction"
+  },
+  {
+    "category": "B_explicit_refutation",
+    "claim": "Humans only use ten percent of their brains.",
+    "evidence": "The ten percent myth is a widely believed but false claim; brain imaging shows humans use virtually all of their brain.",
+    "expected_label": "contradiction"
+  },
+  {
+    "category": "C_myth_title_restatement",
+    "claim": "The Moon is made of green cheese.",
+    "evidence": "The Moon is made of green cheese. \"The Moon is made of green cheese\" is a statement referring to a fanciful belief that the Moon is composed of cheese.",
+    "expected_label": "contradiction"
+  },
+  {
+    "category": "C_myth_title_restatement",
+    "claim": "Bats are completely blind.",
+    "evidence": "Are Bats Blind? Debunking the Phrase \"Blind as a Bat\"",
+    "expected_label": "contradiction"
+  },
+  {
+    "category": "D_detail_mismatch_not_contradiction",
+    "claim": "Albert Einstein developed the theory of general relativity.",
+    "evidence": "Albert Einstein was a German-born theoretical physicist best known for developing the theory of relativity. His mass-energy equivalence formula E=mc2 arises from special relativity.",
+    "expected_label": "entailment",
+    "note": "Evidence discusses a related but different specific theory (special relativity) alongside the correct one - should not be scored as a confident contradiction of the general relativity claim."
+  },
+  {
+    "category": "D_detail_mismatch_not_contradiction",
+    "claim": "The Great Fire of London occurred in 1666.",
+    "evidence": "The Great Fire of London was a major conflagration that swept through the central parts of London in September 1666.",
+    "expected_label": "entailment",
+    "note": "Same event, same year, additional detail (month) - not a mismatch that should read as contradiction."
+  },
+  {
+    "category": "D_actual_contradiction_different_entity",
+    "claim": "Albert Einstein developed the theory of general relativity.",
+    "evidence": "Isaac Newton developed the theory of general relativity in 1915.",
+    "expected_label": "contradiction",
+    "note": "Genuine contradiction: wrong person entirely, not just a related sub-topic."
+  },
+  {
+    "category": "D_actual_contradiction_different_date",
+    "claim": "The Great Fire of London occurred in 1666.",
+    "evidence": "The Great Fire of London occurred in 1755, destroying most of the medieval city.",
+    "expected_label": "contradiction",
+    "note": "Genuine contradiction: same event, factually wrong date, not a compatible additional detail."
+  },
+  {
+    "category": "E_weak_entailment_not_support",
+    "claim": "Photosynthesis in plants primarily occurs in the roots.",
+    "evidence": "Non-vascular plants, the liverworts, hornworts and mosses, do not produce ground-penetrating vascular roots and most of the plant participates in photosynthesis.",
+    "expected_label": "neutral",
+    "note": "Evidence discusses photosynthesis broadly without establishing that roots specifically perform it - should not read as supporting the roots-specific claim."
+  },
+  {
+    "category": "E_weak_entailment_not_support",
+    "claim": "The human heart has four chambers.",
+    "evidence": "The heart is a muscular organ found in most animals that pumps blood through the blood vessels.",
+    "expected_label": "neutral",
+    "note": "Evidence is about the heart generally but never states the chamber count - should not be scored as confirming the specific claim."
+  },
+  {
+    "category": "F_genuine_entailment",
+    "claim": "The Eiffel Tower is located in Paris, France.",
+    "evidence": "The Eiffel Tower is a wrought-iron lattice tower on the Champ de Mars in Paris, France.",
+    "expected_label": "entailment"
+  },
+  {
+    "category": "F_genuine_entailment",
+    "claim": "Mount Everest is the highest mountain above sea level on Earth.",
+    "evidence": "Mount Everest is Earth's highest mountain above sea level, located in the Mahalangur Himal sub-range of the Himalayas.",
+    "expected_label": "entailment"
+  },
+  {
+    "category": "F_genuine_entailment",
+    "claim": "William Shakespeare wrote the play Hamlet.",
+    "evidence": "Hamlet, Prince of Denmark, often shortened to Hamlet, is a tragedy written by William Shakespeare sometime between 1599 and 1601.",
+    "expected_label": "entailment"
+  },
+  {
+    "category": "G_genuine_contradiction",
+    "claim": "The Eiffel Tower is located in Berlin, Germany.",
+    "evidence": "The Eiffel Tower is a wrought-iron lattice tower on the Champ de Mars in Paris, France.",
+    "expected_label": "contradiction"
+  },
+  {
+    "category": "G_genuine_contradiction",
+    "claim": "The Amazon River is located in Europe.",
+    "evidence": "The Amazon River in South America is the largest river by discharge volume of water in the world.",
+    "expected_label": "contradiction"
+  },
+  {
+    "category": "G_genuine_contradiction",
+    "claim": "Antibiotics are effective treatments for viral infections like the common cold.",
+    "evidence": "Antibiotics are not effective against viruses such as the common cold and are only useful for treating bacterial infections.",
+    "expected_label": "contradiction"
+  }
+]

@@ -1,0 +1,92 @@
+[
+  {
+    "claim": "The Sahara Desert is the largest hot desert in the world.",
+    "label": "true-geography-superlative",
+    "acceptable": ["likely_true", "mixed"]
+  },
+  {
+    "claim": "Mount Everest is the tallest mountain in the world.",
+    "label": "true-geography",
+    "acceptable": ["likely_true"]
+  },
+  {
+    "claim": "Napoleon died in exile on the island of Saint Helena.",
+    "label": "true-history",
+    "acceptable": ["likely_true"]
+  },
+  {
+    "claim": "The Statue of Liberty was a gift from Germany to the United States.",
+    "label": "false-history",
+    "acceptable": ["likely_false"]
+  },
+  {
+    "claim": "Humans only use 10 percent of their brains.",
+    "label": "false-myth",
+    "acceptable": ["likely_false"]
+  },
+  {
+    "claim": "The Great Wall of China is visible from space with the naked eye.",
+    "label": "false-myth",
+    "acceptable": ["likely_false"]
+  },
+  {
+    "claim": "COVID-19 vaccines contain microchips for tracking people.",
+    "label": "false-health-misinfo",
+    "acceptable": ["likely_false"]
+  },
+  {
+    "claim": "Sharks are more likely to kill a human than a human is to kill a shark.",
+    "label": "false-nuanced-myth",
+    "acceptable": ["likely_false", "mixed"]
+  },
+  {
+    "claim": "The Eiffel Tower grows slightly taller in the summer due to thermal expansion.",
+    "label": "true-science-surprising",
+    "acceptable": ["likely_true", "mixed"]
+  },
+  {
+    "claim": "Goldfish can recognize their owners' faces.",
+    "label": "true-nuanced-biology",
+    "acceptable": ["likely_true", "mixed"]
+  },
+  {
+    "claim": "The adult human body has 206 bones.",
+    "label": "true-biology",
+    "acceptable": ["likely_true"]
+  },
+  {
+    "claim": "Cracking your knuckles causes arthritis.",
+    "label": "false-health-myth",
+    "acceptable": ["likely_false"]
+  },
+  {
+    "claim": "China's First Emperor was buried with an army of terracotta soldiers.",
+    "label": "true-history",
+    "acceptable": ["likely_true"]
+  },
+  {
+    "claim": "Alexander Graham Bell was the sole, uncontested inventor of the telephone.",
+    "label": "false-nuanced-history",
+    "acceptable": ["likely_false", "mixed"]
+  },
+  {
+    "claim": "The Berlin Wall was built primarily to keep Western spies out of East Germany.",
+    "label": "false-nuanced-history",
+    "acceptable": ["likely_false", "mixed"]
+  },
+  {
+    "claim": "Coffee was first discovered in Ethiopia.",
+    "label": "true-nuanced-history",
+    "acceptable": ["likely_true", "mixed"]
+  },
+  {
+    "claim": "The speed of light is approximately 300,000 kilometers per second.",
+    "label": "true-science",
+    "acceptable": ["likely_true"]
+  },
+  {
+    "claim": "Bananas grow on trees.",
+    "label": "false-nuanced-myth",
+    "acceptable": ["likely_false", "mixed"]
+  }
+]

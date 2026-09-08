@@ -46,6 +46,77 @@ evidence. Do not invent facts beyond what's given above.
 """
 
 
+SEARCH_QUERY_PROMPT = """Given the following factual claim, write the single best short web/encyclopedia \
+search query (3-8 words) to find evidence that would confirm or refute it. Prefer specific, well-known \
+terminology over vague paraphrasing - e.g. for a claim about vaccines and autism, prefer "MMR vaccine autism \
+controversy" over just "vaccines". Return ONLY the query text, with no quotes, labels, or explanation.
+
+Claim: "{claim_text}"
+"""
+
+
+def generate_search_query(claim_text: str) -> str:
+    """A search query for claims where entity-extraction alone produces a
+    weak one - e.g. "Vaccines cause autism" tags "Vaccines" as a NORP entity
+    and "autism" as nothing, so the entity query is just "Vaccines" and never
+    finds the actual controversy article."""
+    settings = get_settings()
+    client = _get_client()
+    response = client.models.generate_content(
+        model=settings.gemini_model,
+        contents=SEARCH_QUERY_PROMPT.format(claim_text=claim_text),
+    )
+    return (response.text or "").strip().strip('"').strip("'")
+
+
+EVIDENCE_CLAIM_EXTRACTION_PROMPT = """You are a fact-checking assistant. You are given a CLAIM and an \
+EVIDENCE passage found by a search engine. Write exactly one clean, direct, declarative sentence stating \
+what the evidence actually asserts about the claim's topic - not a summary of the passage, not a restatement \
+of the claim, and not a question.
+
+Rules:
+- If the evidence frames something as a myth, misconception, hoax, or debunked belief, state the true fact \
+directly (e.g. "Einstein was in fact a strong mathematics student; the story that he failed math is a myth" \
+- NOT "the claim that Einstein failed math is a myth" and NOT a repetition of the myth itself).
+- If the evidence is phrased as a question that is never actually answered in the passage, or does not \
+address the claim's topic at all, respond with exactly: UNDETERMINED
+- Never end your sentence with a question mark.
+- Do not just restate the claim in different words - state what the EVIDENCE says, which may support, \
+refute, or say nothing about the claim.
+
+CLAIM: "{claim_text}"
+
+EVIDENCE: "{evidence_text}"
+
+Respond with ONLY the one sentence (or UNDETERMINED), nothing else.
+"""
+
+_EVIDENCE_CLAIM_SENTINELS = {"UNDETERMINED", "N/A", "NONE", "UNKNOWN"}
+
+
+def _normalize_evidence_claim(text: str) -> str:
+    """"" (the "could not resolve" signal, matching extract_claims's "[]"
+    convention) when the raw response doesn't commit to an answer, doesn't
+    address the claim's topic, or is otherwise unusable."""
+    cleaned = (text or "").strip().strip('"').strip("'")
+    if not cleaned or cleaned.upper() in _EVIDENCE_CLAIM_SENTINELS or "?" in cleaned:
+        return ""
+    return cleaned
+
+
+def extract_evidence_claim(claim_text: str, evidence_text: str) -> str:
+    """Normalizes one evidence document into a single clean, unhedged
+    sentence stating what it asserts about the claim's topic, for stage 7b
+    to run a fresh, less-ambiguous NLI check against."""
+    settings = get_settings()
+    client = _get_client()
+    response = client.models.generate_content(
+        model=settings.gemini_model,
+        contents=EVIDENCE_CLAIM_EXTRACTION_PROMPT.format(claim_text=claim_text, evidence_text=evidence_text),
+    )
+    return _normalize_evidence_claim(response.text or "")
+
+
 def extract_claims(content: str) -> list[str]:
     settings = get_settings()
     client = _get_client()

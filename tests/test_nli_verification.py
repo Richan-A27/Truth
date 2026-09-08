@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from app.ml.model_registry import get_nli_model
+from app.ml.model_registry import get_nli_labels, get_nli_model
 from app.pipeline.stage7_nli_verification import _softmax
 import numpy as np
 
@@ -25,7 +25,5 @@ def test_known_nli_pairs_classify_correctly(case):
     logits = model.predict([(case["premise"], case["hypothesis"])])
     probs = _softmax(np.asarray(logits))
 
-    from app.ml.model_registry import NLI_LABELS
-
-    label = NLI_LABELS[int(np.argmax(probs[0]))]
+    label = get_nli_labels()[int(np.argmax(probs[0]))]
     assert label == case["expected_label"]

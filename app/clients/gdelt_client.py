@@ -14,11 +14,19 @@ logger = logging.getLogger(__name__)
 DOC_API_URL = "https://api.gdeltproject.org/api/v2/doc/doc"
 
 
+def _headers() -> dict[str, str]:
+    # GDELT has no documented "polite pool" the way Wikipedia/OpenAlex do, but
+    # an identified client is still the right default and costs nothing.
+    contact = get_settings().wikipedia_contact
+    identity = f"educational project; {contact}" if contact else "educational project"
+    return {"User-Agent": f"TruthVerificationBot/0.1 ({identity})"}
+
+
 @ttl_cache()
 @retry_external_call()
 async def search(query: str, limit: int = 5) -> list[EvidenceDocument]:
     settings = get_settings()
-    async with httpx.AsyncClient(timeout=settings.gdelt_timeout_seconds) as client:
+    async with httpx.AsyncClient(timeout=settings.gdelt_timeout_seconds, headers=_headers()) as client:
         resp = await client.get(
             DOC_API_URL,
             params={

@@ -32,3 +32,47 @@ def test_myth_description_is_scored_as_contradiction_not_entailment():
     )
     verdicts = verify_claim("The moon is made of green cheese.", [evidence])
     assert verdicts[0].label == "contradiction"
+
+
+@pytest.mark.integration
+@pytest.mark.xfail(
+    reason=(
+        "Known, unresolved model limitation - see stage7_nli_verification.py's "
+        "module docstring note on 'specific-detail mismatch'. Kept as a live "
+        "regression probe rather than deleted, so a future model swap or fix "
+        "is visible the moment this starts passing."
+    ),
+    strict=False,
+)
+def test_specific_detail_mismatch_is_not_scored_as_contradiction():
+    """The real Wikipedia 'Albert Einstein' extract, verbatim, scored this
+    true claim 10/100 "likely_false". It is NOT a hedge-marker bug (this text
+    contains none) and NOT fixed by restricting NLI to the most
+    claim-relevant sentences (see TOP_SENTENCES_FOR_NLI): the sentence
+    mentioning "special relativity" and the one mentioning "quantum theory"
+    are both topically relevant (0.50 and 0.65 SBERT similarity to the
+    claim, not noise) and each independently scores >99% contradiction
+    against a claim naming "general relativity" specifically. The model
+    appears to treat "mentions a different specific detail" as refutation
+    rather than as an unaddressed aspect - a deeper calibration issue than
+    anything sentence selection or hedge detection can route around.
+    """
+    evidence = RerankedEvidence(
+        source="wikipedia",
+        title="Albert Einstein",
+        url="https://en.wikipedia.org/wiki/Albert_Einstein",
+        snippet=(
+            "Albert Einstein (14 March 1879 – 18 April 1955) was a German-born theoretical "
+            "physicist best known for developing the theory of relativity. Einstein also made "
+            "important contributions to quantum theory. His mass–energy equivalence formula "
+            'E = mc2, which arises from special relativity, has been called "the world\'s most '
+            'famous equation". He received the 1921 Nobel Prize in Physics for "his services to '
+            'theoretical physics, and especially for his discovery of the law of the '
+            'photoelectric effect". Born as a subject to the Kingdom of Württemberg, part of '
+            "the German Empire, Einstein moved to Switzerland in 1895, forsaking his citizenship "
+            "the following year."
+        ),
+        cross_encoder_score=7.99,
+    )
+    verdicts = verify_claim("Albert Einstein developed the theory of general relativity.", [evidence])
+    assert verdicts[0].label == "entailment"

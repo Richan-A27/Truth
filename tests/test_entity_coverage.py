@@ -35,6 +35,29 @@ def test_claim_without_entities_is_not_penalised():
     assert _entity_coverage(claim, "anything at all") == 1.0
 
 
+EIFFEL_CLAIM_WITH_WIKIDATA = _claim_with_entities(
+    "The Eiffel Tower is located in Paris, France.",
+    [("The Eiffel Tower", "FAC"), ("Paris", "GPE"), ("France", "GPE")],
+)
+EIFFEL_CLAIM_WITH_WIKIDATA.entities[0].wikidata_description = "lattice tower in Paris, France"
+
+
+def test_same_name_distractor_scores_lower_with_wikidata_description():
+    """The exact failure this feature exists for: 'Eiffel Tower' alone
+    matches both the real tower and its Texas replica by name; only the
+    real one's Wikidata description overlaps with the evidence text too."""
+    real = "The Eiffel Tower is a lattice tower on the Champ de Mars in Paris, France."
+    distractor = "Texas's Eiffel Tower is a landmark in the city of Paris, Texas."
+
+    assert _entity_coverage(EIFFEL_CLAIM_WITH_WIKIDATA, real) == 1.0
+    assert _entity_coverage(EIFFEL_CLAIM_WITH_WIKIDATA, distractor) < 1.0
+
+
+def test_missing_wikidata_description_falls_back_to_name_matching():
+    claim = _claim_with_entities("x", [("Eiffel Tower", "FAC")])  # no wikidata_description set
+    assert _entity_coverage(claim, "Texas's Eiffel Tower is a landmark in Paris, Texas.") == 1.0
+
+
 def _verdict(label: str, title: str, snippet: str, ce: float) -> NLIVerdict:
     evidence = RerankedEvidence(
         source="wikipedia", title=title, url=f"https://example.com/{title}", snippet=snippet, cross_encoder_score=ce

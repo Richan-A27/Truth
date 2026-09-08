@@ -1,0 +1,67 @@
+[
+  {
+    "claim": "Lewis Hamilton has won seven Formula 1 World Championships.",
+    "label": "true-f1",
+    "acceptable": ["likely_true"]
+  },
+  {
+    "claim": "Michael Schumacher won the 2021 Formula 1 World Championship.",
+    "label": "false-f1",
+    "acceptable": ["likely_false"]
+  },
+  {
+    "claim": "Max Verstappen won the 2021 Formula 1 World Championship.",
+    "label": "true-f1",
+    "acceptable": ["likely_true"]
+  },
+  {
+    "claim": "The Monaco Grand Prix is held in Italy.",
+    "label": "false-f1-geography",
+    "acceptable": ["likely_false"]
+  },
+  {
+    "claim": "Formula 1 cars use hybrid power units combining a turbocharged V6 engine with electric motors.",
+    "label": "true-f1-technical",
+    "acceptable": ["likely_true", "mixed"]
+  },
+  {
+    "claim": "Force India is a current Formula 1 team on the starting grid.",
+    "label": "false-f1-outdated",
+    "acceptable": ["likely_false", "mixed"]
+  },
+  {
+    "claim": "Ferrari is the oldest continuously competing team in Formula 1.",
+    "label": "true-f1",
+    "acceptable": ["likely_true", "mixed"]
+  },
+  {
+    "claim": "The human heart has four chambers.",
+    "label": "true-biology",
+    "acceptable": ["likely_true"]
+  },
+  {
+    "claim": "The Great Barrier Reef is located off the coast of Japan.",
+    "label": "false-geography",
+    "acceptable": ["likely_false"]
+  },
+  {
+    "claim": "Climate change is caused primarily by natural solar cycles, not human activity.",
+    "label": "false-science-misinfo",
+    "acceptable": ["likely_false"]
+  },
+  {
+    "claim": "Antibiotics are effective treatments for viral infections like the common cold.",
+    "label": "false-health-misinfo",
+    "acceptable": ["likely_false"]
+  },
+  {
+    "claim": "The Amazon rainforest spans nine countries in South America.",
+    "label": "true-geography",
+    "acceptable": ["likely_true", "mixed"]
+  },
+  {
+    "claim": "Photosynthesis in plants primarily occurs in the roots.",
+    "label": "false-biology",
+    "acceptable": ["likely_false"]
+  }
+]

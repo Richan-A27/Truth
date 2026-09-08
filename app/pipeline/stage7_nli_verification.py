@@ -1,12 +1,81 @@
+"""NLI-based claim verification, and its accumulated corrections for
+cross-encoder/nli-deberta-v3-base's measured biases.
+
+Known, unresolved limitation - specific-detail mismatch treated as
+contradiction: a sentence that is genuinely topically relevant but names a
+different specific instance of what the claim asserts (evidence says
+"special relativity" / "quantum theory", claim says "general relativity")
+gets scored as confidently contradicting it, not as an unaddressed aspect.
+Confirmed live: the real Wikipedia "Albert Einstein" extract scored the true
+claim "Einstein developed general relativity" as 10/100 "likely_false" for
+exactly this reason. It is not a hedge-marker issue (see test file: the
+extract contains no hedge language) and is not fixed by restricting NLI to
+the most claim-relevant sentences (TOP_SENTENCES_FOR_NLI below) - the
+mismatched-detail sentences are relevant enough (0.50-0.65 SBERT similarity)
+to survive that filter and still independently score >99% contradiction.
+Same underlying family as the same-name-entity confusion documented in
+stage8_trust_scoring.py's _entity_coverage: the model conflates "differs in
+a specific detail" with "contradicts." See
+tests/test_nli_hedge_detection.py::test_specific_detail_mismatch_is_not_scored_as_contradiction
+for the live reproduction (xfail, kept as a regression probe rather than
+deleted). Fixing this properly likely needs a better-calibrated NLI model
+for fact-verification specifically, not another string-matching heuristic.
+"""
+
 import re
 
 import numpy as np
 
-from app.ml.model_registry import NLI_LABELS, get_nli_model, get_sentencizer
+from app.ml.model_registry import get_nli_labels, get_nli_model, get_sbert_model, get_sentencizer
 from app.schemas.nli import NLIVerdict
 from app.schemas.ranking import RerankedEvidence
 
 MAX_SENTENCES_PER_DOC = 6
+
+# Taking the max contradiction across every sentence in a document means a
+# single off-topic sentence can decide the verdict: an Einstein biography
+# extract scored a claim about general relativity as 100%-confidence
+# contradiction because of an unrelated sentence about him enrolling in
+# university - topically nowhere near relativity, but the model's
+# unrelated-content bias (see MIN_RELEVANCE_FOR_VERDICT below) fired anyway.
+# Restricting NLI to the sentences most semantically similar to the claim
+# (via SBERT, already loaded for stage5) keeps genuinely unrelated sentences
+# out of the vote entirely, rather than trusting NLI's own confidence to
+# notice they're irrelevant - it doesn't reliably notice.
+TOP_SENTENCES_FOR_NLI = 3
+
+
+def _select_relevant_sentences(claim_text: str, sentences: list[str]) -> list[tuple[int, str]]:
+    """Returns (original_index, sentence) pairs, not just sentences - the
+    index is needed to look up each selected sentence's immediate
+    predecessor for _with_preceding_context, and a plain value lookup
+    would resolve to the wrong occurrence if the same sentence text
+    appears twice in the document."""
+    indexed = list(enumerate(sentences))
+    if len(sentences) <= TOP_SENTENCES_FOR_NLI:
+        return indexed
+    model = get_sbert_model()
+    claim_embedding = model.encode([claim_text], normalize_embeddings=True)[0]
+    sentence_embeddings = model.encode(sentences, normalize_embeddings=True)
+    similarities = sentence_embeddings @ claim_embedding
+    ranked = sorted(indexed, key=lambda pair: -similarities[pair[0]])
+    return ranked[:TOP_SENTENCES_FOR_NLI]
+
+
+def _with_preceding_context(sentences: list[str], index: int) -> str:
+    """Prepends the immediately preceding sentence, when there is one -
+    restores context an anaphoric reference depends on, which plain
+    per-sentence scoring throws away. Confirmed live: Wikipedia's "5G"
+    article reads "Two main versions of the conspiracy theory exist: The
+    first claims that radiation from 5G weakens the immune system...". In
+    isolation, "The first claims that..." reads as a confident, unhedged
+    assertion (scored entailment at 1.00 against a claim that 5G weakens
+    the immune system); with the preceding sentence restored, the
+    "conspiracy theory" framing is right there for both the NLI model and
+    the existing hedge-marker check to see."""
+    if index == 0:
+        return sentences[index]
+    return f"{sentences[index - 1]} {sentences[index]}"
 
 
 def _softmax(logits: np.ndarray) -> np.ndarray:
@@ -23,14 +92,17 @@ _TERMINAL_PUNCTUATION = (".", "!", "?", '."', '!"', '?"')
 # the evidence is explicitly debunking it - e.g. an encyclopedia article
 # titled "The Moon is made of green cheese" that opens with "a fanciful
 # belief that..." gets scored as confirming the claim instead of refuting it.
-# Checked against the whole document (title + snippet), not just the
-# sentence that wins the entailment/contradiction vote: a short title like
-# "The Moon is made of green cheese" is near-identical to the claim and wins
-# on decisiveness alone, while the hedge marker sits in the next sentence of
-# the snippet. When a hedge marker appears anywhere in the document, any
-# "entailment" call from it is corrected to "contradiction" (the source is
-# documenting the claim as false, which is what a source describing
-# something as a myth/misconception is actually saying).
+#
+# Checked per sentence, not document-wide: a biography's lead section
+# routinely debunks some *other* myth about its subject in passing (e.g. the
+# "Einstein failed math" legend), and a document-wide check flipped the
+# correct sentence about Einstein developing relativity - genuinely
+# entailing, no hedge language anywhere near it - into a contradiction
+# because the word "misconception" appeared elsewhere in the same extract,
+# addressing a claim about something else entirely. Scoping the check to the
+# sentence that itself scores as entailment keeps the original fix (the
+# hedge marker sits right there in that sentence for the myth cases) without
+# that false positive.
 _HEDGE_MARKERS = (
     "fanciful belief",
     "false belief",
@@ -69,6 +141,27 @@ _HEDGE_MARKERS = (
 def _is_hedged(sentence: str) -> bool:
     lowered = sentence.lower()
     return any(marker in lowered for marker in _HEDGE_MARKERS)
+
+
+def _is_unanswered_question(sentence: str) -> bool:
+    """A headline phrased as a question ("Was Albert Einstein really a bad
+    student who failed math?") doesn't assert either answer - it contains
+    the claim's words either way, so NLI can score it as confident
+    entailment or contradiction despite the sentence itself committing to
+    nothing. Most damaging with headline-only sources (Google News gives us
+    no article body, just the title) where there's no surrounding text for
+    the actual answer to show up in. Confirmed live: this exact headline
+    scored 0.97 entailment against "Einstein failed mathematics as a
+    student," dragging three confident contradictions down to "mixed" -
+    the article debunks the claim, the headline alone can't say so.
+
+    Checks for "?" anywhere in the sentence rather than requiring it as the
+    final character: a Google News headline always carries a "- Source
+    Name" suffix (see google_news_client.py), so the sentencizer keeps
+    "... failed math? -" as one span with the question mark stranded
+    mid-sentence, not at the end.
+    """
+    return "?" in sentence
 
 
 # cross-encoder/nli-deberta-v3-base has a strong, empirically-verified bias
@@ -133,28 +226,38 @@ def _split_sentences(text: str) -> list[str]:
     return sentences[:MAX_SENTENCES_PER_DOC] or [text]
 
 
-def verify_claim(claim_text: str, documents: list[RerankedEvidence]) -> list[NLIVerdict]:
+def verify_claim(
+    claim_text: str, documents: list[RerankedEvidence], nli_variant: str | None = None
+) -> list[NLIVerdict]:
+    """`nli_variant` defaults to settings.nli_model - passed explicitly only
+    by the model A/B comparison script, so normal callers (the orchestrator)
+    are unaffected and keep using whichever backend is configured."""
     if not documents:
         return []
 
-    model = get_nli_model()
+    model = get_nli_model(nli_variant)
+    labels = get_nli_labels(nli_variant)
 
-    # premise = evidence sentence, hypothesis = claim: "entailment" means the
+    # premise = evidence sentence (plus its immediate predecessor, see
+    # _with_preceding_context), hypothesis = claim: "entailment" means the
     # evidence supports the claim. Every sentence of every document is scored
     # in a single batched call for efficiency.
     pairs: list[tuple[str, str]] = []
     owner_doc_index: list[int] = []
-    doc_is_hedged = [_is_hedged(f"{doc.title} {doc.snippet}") for doc in documents]
+    sentence_texts: list[str] = []
     for doc_index, doc in enumerate(documents):
-        for sentence in _split_sentences(f"{doc.title}. {doc.snippet}"):
-            pairs.append((sentence, claim_text))
+        candidates = _split_sentences(f"{doc.title}. {doc.snippet}")
+        for index, _ in _select_relevant_sentences(claim_text, candidates):
+            premise = _with_preceding_context(candidates, index)
+            pairs.append((premise, claim_text))
             owner_doc_index.append(doc_index)
+            sentence_texts.append(premise)
 
     logits = model.predict(pairs)
     probs = _softmax(np.asarray(logits))
 
-    contradiction_idx = NLI_LABELS.index("contradiction")
-    entailment_idx = NLI_LABELS.index("entailment")
+    contradiction_idx = labels.index("contradiction")
+    entailment_idx = labels.index("entailment")
 
     # Track the best entailment and the best contradiction separately per
     # document rather than letting one "most decisive" sentence speak for the
@@ -166,10 +269,32 @@ def verify_claim(claim_text: str, documents: list[RerankedEvidence]) -> list[NLI
     # that Perseverance landed on Mars in February 2021.
     max_entailment = [0.0] * len(documents)
     max_contradiction = [0.0] * len(documents)
+    # Tracks whether max_contradiction[doc] came from an explicit hedge
+    # redirect (real textual evidence the source calls this a myth) rather
+    # than a raw NLI contradiction call (the model's own, less trustworthy,
+    # bias toward "contradiction" on merely-unrelated text - see below).
+    hedge_redirected = [False] * len(documents)
     for i, doc_index in enumerate(owner_doc_index):
         prob_row = probs[i]
-        max_entailment[doc_index] = max(max_entailment[doc_index], float(prob_row[entailment_idx]))
-        max_contradiction[doc_index] = max(max_contradiction[doc_index], float(prob_row[contradiction_idx]))
+        entailment = float(prob_row[entailment_idx])
+        contradiction = float(prob_row[contradiction_idx])
+
+        # a question commits to neither answer - don't let it vote either
+        # way, unlike a hedge marker (below) where the direction is known
+        # and just needs redirecting
+        if _is_unanswered_question(sentence_texts[i]):
+            entailment = 0.0
+            contradiction = 0.0
+        # this specific sentence reads as entailing the claim, but it's
+        # phrased as describing a myth/misconception - that's the source
+        # refuting the claim, not confirming it, so redirect its vote
+        elif entailment >= ENTAILMENT_TRUST_THRESHOLD and _is_hedged(sentence_texts[i]):
+            contradiction = max(contradiction, entailment)
+            entailment = 0.0
+            hedge_redirected[doc_index] = True
+
+        max_entailment[doc_index] = max(max_entailment[doc_index], entailment)
+        max_contradiction[doc_index] = max(max_contradiction[doc_index], contradiction)
 
     verdicts = []
     for doc_index, doc in enumerate(documents):
@@ -177,9 +302,18 @@ def verify_claim(claim_text: str, documents: list[RerankedEvidence]) -> list[NLI
 
         if doc.cross_encoder_score < MIN_RELEVANCE_FOR_VERDICT:
             label, confidence = "neutral", max(entailment, contradiction)
-        elif doc_is_hedged[doc_index] and entailment >= ENTAILMENT_TRUST_THRESHOLD:
-            # source documents the claim as a myth; that refutes it
-            label, confidence = "contradiction", entailment
+        elif hedge_redirected[doc_index] and contradiction >= CONTRADICTION_TRUST_THRESHOLD:
+            # explicit hedge language beats a bare, unhedged restatement of
+            # the claim elsewhere in the same document - e.g. an article
+            # titled "The Moon is made of green cheese" trivially restates
+            # the claim as its own title (prepended to every document's
+            # text below), which would otherwise win as "entailment"
+            # outright over the sentence that actually calls it a myth.
+            # Confirmed live: paragraph-level reranking (stage 6) shrank
+            # the sentence pool enough that this bare title-sentence, which
+            # used to be crowded out by more diverse content, now reliably
+            # survives into the vote.
+            label, confidence = "contradiction", contradiction
         elif entailment >= ENTAILMENT_TRUST_THRESHOLD:
             # asymmetric on purpose: measured against unrelated sentence pairs
             # this model emits contradiction at ~0.99 but entailment at

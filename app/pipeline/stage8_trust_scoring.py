@@ -1,5 +1,6 @@
 import math
 import re
+from datetime import datetime
 
 from app.schemas.claim import Claim
 from app.schemas.nli import NLIVerdict
@@ -7,6 +8,7 @@ from app.schemas.trust import ClaimTrustResult
 
 SOURCE_RELIABILITY_WEIGHTS = {
     "semantic_scholar": 1.0,
+    "openalex": 1.0,
     "gdelt": 0.8,
     "wikipedia": 0.7,
 }
@@ -34,16 +36,55 @@ MIN_ENTITY_COVERAGE_WEIGHT = 0.15
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
 _TRIVIAL_TOKENS = {"the", "a", "an", "of", "in", "on", "at", "and"}
 
+_YEAR_RE = re.compile(r"\b(1[0-9]{3}|20[0-9]{2})\b")
+
+# A source cannot describe something that had not happened yet. This is
+# deliberately a soft downweight rather than a hard filter: published_date is
+# often the page's *last-edited* date rather than when the described event
+# was first reported (Wikipedia's own extracts carry no publish date at all
+# and are unaffected by this), so an apparent mismatch is treated as
+# suspicious rather than disqualifying.
+TEMPORAL_MISMATCH_WEIGHT = 0.3
+
+
+def _extract_claim_year(claim: Claim) -> int | None:
+    """The first plausible year mentioned in the claim's DATE entities, if
+    any (e.g. "February 2021" -> 2021). Used only as a lower bound: evidence
+    published before this year cannot be reporting on it firsthand."""
+    for entity in claim.entities:
+        if entity.label != "DATE":
+            continue
+        match = _YEAR_RE.search(entity.text)
+        if match:
+            return int(match.group(1))
+    return None
+
+
+def _temporal_consistency(claim_year: int | None, evidence_published: datetime | None) -> float:
+    if claim_year is None or evidence_published is None:
+        return 1.0  # no date signal on either side; nothing to check
+    if evidence_published.year < claim_year:
+        return TEMPORAL_MISMATCH_WEIGHT
+    return 1.0
+
+
+_DESCRIPTION_MIN_TOKEN_LEN = 3
+
 
 def _entity_coverage(claim: Claim, evidence_text: str) -> float:
-    """Fraction of the claim's named entities that the evidence mentions.
+    """Fraction of the claim's named entities that the evidence is actually
+    about, not just a page that happens to share a name with.
 
     Retrieval happily returns pages about a *different* entity with a similar
     name - "Eiffel Tower (Paris, Texas)" for a claim about the Paris in
     France, or Jupiter's own moons for a claim about Earth's Moon - and the
-    NLI model then reports a confident contradiction. Requiring the evidence
-    to actually mention what the claim is about separates those distractors
-    from genuinely on-topic sources.
+    NLI model then reports a confident contradiction. Bare name matching
+    alone can't tell these apart, since the distractor's name literally is
+    the shared text. When a Wikidata description is available (e.g. "capital
+    and most populous city in France" for Paris), at least one of its
+    distinguishing words has to appear too - "Eiffel Tower" matches the name
+    of both the real tower and its Texas replica, but only the real one's
+    page will also mention "France" or "Paris".
     """
     if not claim.entities:
         return 1.0  # no entity signal available; don't penalise anything
@@ -52,8 +93,19 @@ def _entity_coverage(claim: Claim, evidence_text: str) -> float:
     covered = 0
     for entity in claim.entities:
         tokens = {t for t in _TOKEN_RE.findall(entity.text.lower()) if t not in _TRIVIAL_TOKENS}
-        if tokens and tokens <= evidence_tokens:
-            covered += 1
+        if not tokens or not tokens <= evidence_tokens:
+            continue
+
+        if entity.wikidata_description:
+            description_tokens = {
+                t
+                for t in _TOKEN_RE.findall(entity.wikidata_description.lower())
+                if t not in _TRIVIAL_TOKENS and len(t) >= _DESCRIPTION_MIN_TOKEN_LEN
+            }
+            if description_tokens and not (description_tokens & evidence_tokens):
+                continue  # name matches, but none of what distinguishes it from a same-name entity does
+
+        covered += 1
     return covered / len(claim.entities)
 
 
@@ -84,17 +136,22 @@ def score_claim(claim: Claim, verdicts: list[NLIVerdict]) -> ClaimTrustResult:
     # each item relative to the best-ranked one preserves that ordering.
     top_relevance = max(v.evidence.cross_encoder_score for v in verdicts)
 
+    claim_year = _extract_claim_year(claim)
+
     weighted_sum = 0.0
     total_weight = 0.0
     coverage_by_verdict = []
+    temporal_by_verdict = []
     for v in verdicts:
         source_weight = SOURCE_RELIABILITY_WEIGHTS.get(v.evidence.source, 0.5)
         relevance_weight = 1.0 / (1.0 + math.exp(-(v.evidence.cross_encoder_score - top_relevance)))
         coverage = _entity_coverage(claim, f"{v.evidence.title} {v.evidence.snippet}")
         coverage_weight = MIN_ENTITY_COVERAGE_WEIGHT + (1.0 - MIN_ENTITY_COVERAGE_WEIGHT) * coverage**2
         coverage_by_verdict.append(coverage)
+        temporal_weight = _temporal_consistency(claim_year, v.evidence.published_date)
+        temporal_by_verdict.append(temporal_weight)
 
-        weight = source_weight * relevance_weight * coverage_weight
+        weight = source_weight * relevance_weight * coverage_weight * temporal_weight
         weighted_sum += LABEL_SIGN[v.label] * v.confidence * weight
         total_weight += weight
 
@@ -140,6 +197,8 @@ def score_claim(claim: Claim, verdicts: list[NLIVerdict]) -> ClaimTrustResult:
             "decisive_evidence_count": decisive_count,
             "evidence_confidence": evidence_confidence,
             "mean_entity_coverage": sum(coverage_by_verdict) / len(coverage_by_verdict),
+            "mean_temporal_consistency": sum(temporal_by_verdict) / len(temporal_by_verdict),
+            "claim_year": claim_year,
             "verdict_label": verdict_label,
         },
     )

@@ -1,4 +1,4 @@
-from app.clients import gemini_client
+from app.clients import get_llm_client
 from app.schemas.trust import ClaimTrustResult
 
 VERDICT_PHRASING = {
@@ -13,7 +13,7 @@ def generate_explanation(result: ClaimTrustResult) -> str:
     top_evidence = (result.supporting_evidence + result.contradicting_evidence)[:5]
     snippets = [f"[{v.label}] {v.evidence.title}: {v.evidence.snippet[:200]}" for v in top_evidence]
 
-    return gemini_client.generate_explanation(
+    return get_llm_client().generate_explanation(
         claim_text=result.claim.text,
         verdict_label=result.verdict_label,
         trust_score=result.trust_score,

@@ -1,0 +1,112 @@
+[
+  {
+    "claim": "The Great Fire of London occurred in 1666.",
+    "label": "true-history",
+    "acceptable": ["likely_true"]
+  },
+  {
+    "claim": "Napoleon Bonaparte was exiled to the island of Elba in 1814.",
+    "label": "true-history",
+    "acceptable": ["likely_true", "mixed"]
+  },
+  {
+    "claim": "The Titanic sank in 1912 after hitting an iceberg.",
+    "label": "true-history",
+    "acceptable": ["likely_true"]
+  },
+  {
+    "claim": "Cambridge is a university city in eastern England.",
+    "label": "true-entity-ambiguity",
+    "acceptable": ["likely_true", "mixed"]
+  },
+  {
+    "claim": "Springfield is the capital city of Illinois.",
+    "label": "true-entity-ambiguity",
+    "acceptable": ["likely_true", "mixed"]
+  },
+  {
+    "claim": "Georgia is both a US state and a country in the Caucasus region.",
+    "label": "true-entity-ambiguity",
+    "acceptable": ["likely_true", "mixed"]
+  },
+  {
+    "claim": "The Amazon rainforest produces the majority of the world's oxygen.",
+    "label": "false-nuanced-myth",
+    "acceptable": ["likely_false", "mixed"]
+  },
+  {
+    "claim": "Lightning never strikes the same place twice.",
+    "label": "false-myth",
+    "acceptable": ["likely_false"]
+  },
+  {
+    "claim": "Goldfish have a memory span of only a few seconds.",
+    "label": "false-myth",
+    "acceptable": ["likely_false"]
+  },
+  {
+    "claim": "Napoleon Bonaparte was unusually short for his time, standing under five feet tall.",
+    "label": "false-nuanced-myth",
+    "acceptable": ["likely_false", "mixed"]
+  },
+  {
+    "claim": "The Great Wall of China was built entirely during the Ming dynasty.",
+    "label": "false-nuanced-partial",
+    "acceptable": ["likely_false", "mixed"]
+  },
+  {
+    "claim": "COVID-19 vaccines alter human DNA.",
+    "label": "false-health-misinfo",
+    "acceptable": ["likely_false"]
+  },
+  {
+    "claim": "5G mobile networks cause cancer.",
+    "label": "false-health-misinfo",
+    "acceptable": ["likely_false"]
+  },
+  {
+    "claim": "The Wright brothers achieved the first powered flight in 1903.",
+    "label": "true-history",
+    "acceptable": ["likely_true"]
+  },
+  {
+    "claim": "Marie Curie was the first person to win Nobel Prizes in two different sciences.",
+    "label": "true-science-history",
+    "acceptable": ["likely_true"]
+  },
+  {
+    "claim": "Pluto is officially classified as one of the eight planets in the Solar System.",
+    "label": "false-updated-fact",
+    "acceptable": ["likely_false", "mixed"]
+  },
+  {
+    "claim": "The human tongue has distinct zones exclusively responsible for sweet, sour, salty, and bitter tastes.",
+    "label": "false-myth",
+    "acceptable": ["likely_false", "mixed"]
+  },
+  {
+    "claim": "Mount Kilimanjaro is the tallest mountain in Africa.",
+    "label": "true-geography",
+    "acceptable": ["likely_true"]
+  },
+  {
+    "claim": "Australia is the smallest continent by land area.",
+    "label": "true-geography",
+    "acceptable": ["likely_true", "mixed"]
+  },
+  {
+    "claim": "Albert Einstein failed mathematics as a student.",
+    "label": "false-myth",
+    "acceptable": ["likely_false"]
+  },
+  {
+    "claim": "The Berlin Wall fell in 1989.",
+    "label": "true-history",
+    "acceptable": ["likely_true"]
+  },
+  {
+    "claim": "Bats are completely blind.",
+    "label": "false-myth",
+    "acceptable": ["likely_false"]
+  }
+]

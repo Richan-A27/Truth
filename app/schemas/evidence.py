@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 
 class EvidenceDocument(BaseModel):
-    source: Literal["gdelt", "semantic_scholar", "wikipedia"]
+    source: Literal["gdelt", "semantic_scholar", "openalex", "wikipedia", "crossref", "google_news"]
     title: str
     url: str
     snippet: str

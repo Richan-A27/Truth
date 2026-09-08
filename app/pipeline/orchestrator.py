@@ -4,6 +4,7 @@ import time
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.core.exceptions import PipelineError
 from app.db import repository
 from app.pipeline import (
@@ -14,6 +15,7 @@ from app.pipeline import (
     stage5_semantic_matching,
     stage6_reranking,
     stage7_nli_verification,
+    stage7b_evidence_claim_resolution,
     stage8_trust_scoring,
     stage9_explanation,
 )
@@ -35,11 +37,24 @@ async def _process_claim(
     claim.entities = await asyncio.to_thread(stage3_evidence_search.extract_entities, claim.text)
     await repository.save_claim(session, run_id=run_id, claim=claim)
 
-    documents = await stage3_evidence_search.search_all_sources(claim.text, entities=claim.entities)
+    # Wikidata resolution only feeds trust scoring (stage8), which runs well
+    # after this - so it runs alongside evidence retrieval instead of before
+    # it, adding no latency of its own as long as it fits in that window.
+    documents, claim.entities = await asyncio.gather(
+        stage3_evidence_search.search_all_sources(claim.text, entities=claim.entities),
+        stage3_evidence_search.enrich_entities_with_wikidata(claim.entities),
+    )
     retrieved = await asyncio.to_thread(stage4_bm25_retrieval.rank_by_bm25, claim.text, documents)
     ranked = await asyncio.to_thread(stage5_semantic_matching.rank_by_semantic_similarity, claim.text, retrieved)
     reranked = await asyncio.to_thread(stage6_reranking.rerank, claim.text, ranked)
     verdicts = await asyncio.to_thread(stage7_nli_verification.verify_claim, claim.text, reranked)
+    if get_settings().evidence_claim_resolution_enabled:
+        try:
+            verdicts = await stage7b_evidence_claim_resolution.resolve_ambiguous_verdicts(claim.text, verdicts)
+        except Exception:
+            # a failure here should cost the claim its LLM-refined verdicts,
+            # not the claim itself - fall back to stage 7's first-pass results
+            logger.exception("Evidence-claim resolution failed for claim %r; keeping first-pass verdicts", claim.text)
 
     selected_urls = {v.evidence.url for v in verdicts}
     await repository.save_evidence_items(session, claim_id=claim.id, verdicts=verdicts, selected=selected_urls)

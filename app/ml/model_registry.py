@@ -8,21 +8,45 @@ model-load latency. Each getter also lazy-loads on first call as a fallback
 import spacy
 from sentence_transformers import CrossEncoder, SentenceTransformer
 
+from app.config import get_settings
 from app.ml.device import get_device
 
 _spacy_nlp: spacy.language.Language | None = None
 _sentencizer: spacy.language.Language | None = None
 _sbert_model: SentenceTransformer | None = None
 _reranker_model: CrossEncoder | None = None
-_nli_model: CrossEncoder | None = None
+_nli_models: dict[str, CrossEncoder] = {}
 
 SPACY_MODEL_NAME = "en_core_web_sm"
 SBERT_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 RERANKER_MODEL_NAME = "cross-encoder/ms-marco-MiniLM-L-6-v2"
-NLI_MODEL_NAME = "cross-encoder/nli-deberta-v3-base"
 
-# label order for the nli-deberta-v3-base cross-encoder output logits
-NLI_LABELS = ["contradiction", "entailment", "neutral"]
+# Two selectable NLI backends (see app.config.Settings.nli_model) so the
+# fact-verification variant can be A/B'd against the current one with
+# everything else in stage 7 held identical. Label ORDER differs between
+# them - the fact-verification checkpoint's own config.json says
+# {0: entailment, 1: neutral, 2: contradiction}, not the same order as the
+# current model - so callers must always index via get_nli_labels(variant)
+# for whichever variant they actually requested, never a bare constant.
+NLI_MODEL_VARIANTS = {
+    # Generic NLI, no fact-verification-specific training. Has a measured,
+    # documented bias toward "contradiction" on merely-unrelated text (see
+    # stage7_nli_verification.py) that several heuristics compensate for.
+    "current": "cross-encoder/nli-deberta-v3-base",
+    # Same architecture family and size class (DeBERTa-v3-base, 12 layers,
+    # 768 hidden) as "current", fine-tuned on MNLI+FEVER+ANLI - FEVER being
+    # an actual claim-vs-Wikipedia-evidence fact-verification dataset, the
+    # closest free/public match to this pipeline's own task. Revision
+    # pinned so the A/B comparison stays reproducible.
+    "fact_verification": "MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli",
+}
+NLI_MODEL_REVISIONS = {
+    "fact_verification": "6f5cf0a2b59cabb106aca4c287eed12e357e90eb",
+}
+NLI_LABELS_BY_VARIANT = {
+    "current": ["contradiction", "entailment", "neutral"],
+    "fact_verification": ["entailment", "neutral", "contradiction"],
+}
 
 
 def get_spacy_nlp() -> spacy.language.Language:
@@ -61,11 +85,29 @@ def get_reranker_model() -> CrossEncoder:
     return _reranker_model
 
 
-def get_nli_model() -> CrossEncoder:
-    global _nli_model
-    if _nli_model is None:
-        _nli_model = CrossEncoder(NLI_MODEL_NAME, device=get_device())
-    return _nli_model
+def get_nli_model(variant: str | None = None) -> CrossEncoder:
+    """`variant` defaults to settings.nli_model ("current" or
+    "fact_verification") but can be passed explicitly to load/use both side
+    by side in the same process - the A/B comparison script does exactly
+    that rather than restarting the server to switch backends. Each variant
+    is cached independently so requesting both only pays the load cost once
+    per variant, not once per call."""
+    variant = variant or get_settings().nli_model
+    if variant not in _nli_models:
+        model_name = NLI_MODEL_VARIANTS[variant]
+        revision = NLI_MODEL_REVISIONS.get(variant)
+        kwargs = {"revision": revision} if revision else {}
+        _nli_models[variant] = CrossEncoder(model_name, device=get_device(), **kwargs)
+    return _nli_models[variant]
+
+
+def get_nli_labels(variant: str | None = None) -> list[str]:
+    """Label order is model-specific - see NLI_LABELS_BY_VARIANT's comment.
+    Always fetch labels through this function for whichever variant you
+    requested from get_nli_model(); never assume the order matches between
+    variants."""
+    variant = variant or get_settings().nli_model
+    return NLI_LABELS_BY_VARIANT[variant]
 
 
 def load_all(warm: bool = True) -> None:
@@ -95,6 +137,5 @@ def _warm_up() -> None:
 
 def models_loaded() -> bool:
     return all(
-        m is not None
-        for m in (_spacy_nlp, _sentencizer, _sbert_model, _reranker_model, _nli_model)
-    )
+        m is not None for m in (_spacy_nlp, _sentencizer, _sbert_model, _reranker_model)
+    ) and bool(_nli_models)

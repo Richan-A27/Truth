@@ -5,7 +5,7 @@ accuracy against the expected verdict, so pipeline changes can be compared
 run over run.
 
 Usage:
-    python scripts/evaluate_claims.py [--url http://localhost:8010]
+    python scripts/evaluate_claims.py [--url http://localhost:8010] [--cases eval_claims.json]
 """
 
 import argparse
@@ -16,7 +16,7 @@ from pathlib import Path
 import httpx
 
 DEFAULT_URL = "http://localhost:8010"
-CASES_PATH = Path(__file__).parent / "eval_claims.json"
+DEFAULT_CASES = "eval_claims.json"
 
 
 async def evaluate_one(client: httpx.AsyncClient, base_url: str, case: dict) -> dict:
@@ -45,14 +45,28 @@ async def evaluate_one(client: httpx.AsyncClient, base_url: str, case: dict) -> 
 async def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--url", default=DEFAULT_URL)
+    parser.add_argument(
+        "--cases", default=DEFAULT_CASES, help="Filename under scripts/, e.g. eval_claims_v2.json"
+    )
+    parser.add_argument(
+        "--delay",
+        type=float,
+        default=1.0,
+        help="Seconds to pause between claims - a bare batch run was enough to trip Wikipedia's "
+        "rate limit on every claim (each claim fires 2 Wikipedia calls back to back).",
+    )
     args = parser.parse_args()
 
-    cases = json.loads(CASES_PATH.read_text())
+    cases_path = Path(__file__).parent / args.cases
+    cases = json.loads(cases_path.read_text())
+    print(f"Evaluating {len(cases)} claims from {cases_path.name} against {args.url}\n")
 
     results = []
     async with httpx.AsyncClient() as client:
         # sequential: the dev server holds one copy of each model
-        for case in cases:
+        for i, case in enumerate(cases):
+            if i > 0 and args.delay:
+                await asyncio.sleep(args.delay)
             result = await evaluate_one(client, args.url, case)
             results.append(result)
             mark = "PASS" if result["correct"] else "FAIL"
