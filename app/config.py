@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     # llm_backend="groq": hosted open-weights models, fast and with generous
     # free-tier limits. gpt-oss-20b: fast, strong at instruction-following.
     groq_api_key: str = ""
+    # Used when groq_api_key hits its rate limit (in practice the free tier's
+    # 200k tokens/day). Groq applies limits per organization, so this only
+    # adds capacity if it belongs to a different Groq account/org - a second
+    # key from the same account shares the first one's quota.
+    groq_api_key_fallback: str = ""
     groq_model: str = "openai/gpt-oss-20b"
     groq_timeout_seconds: float = 20.0
 
