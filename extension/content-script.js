@@ -26,25 +26,55 @@
     return PALETTE.inkMuted;
   }
 
+  const CARD_WIDTH = 320;
+  const VIEWPORT_MARGIN = 8;
+
+  // Builds an element from trusted structure + untrusted text. Everything
+  // that comes from the API (explanation, verdict label, error messages) is
+  // set via textContent, never innerHTML: the explanation is LLM-written
+  // from web evidence, so it can contain markup, and these cards render
+  // inside whatever page the user is on.
+  function el(tag, { className, style, text, attrs } = {}, children = []) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (style) node.style.cssText = style;
+    if (text !== undefined) node.textContent = text;
+    for (const [name, value] of Object.entries(attrs || {})) node.setAttribute(name, value);
+    for (const child of children) node.appendChild(child);
+    return node;
+  }
+
   function createCard(requestId, anchorRect) {
     const host = document.createElement("div");
-    host.style.cssText = `
-      position: fixed;
-      z-index: 2147483647;
-      left: ${Math.max(8, Math.min(anchorRect.left, window.innerWidth - 328))}px;
-      top: ${anchorRect.bottom + 8}px;
-    `;
+    host.style.cssText = "position: fixed; z-index: 2147483647; left: 0; top: 0;";
     const shadow = host.attachShadow({ mode: "open" });
     document.body.appendChild(host);
-    cards.set(requestId, { host, shadow });
+    cards.set(requestId, { host, shadow, anchorRect });
     renderLoading(requestId);
     return { host, shadow };
+  }
+
+  // Below the selection by default; above it when there's no room below.
+  // Clamped so the card never runs off either edge of the viewport.
+  function positionCard(entry) {
+    const { host, anchorRect } = entry;
+    const width = Math.min(CARD_WIDTH, window.innerWidth - VIEWPORT_MARGIN * 2);
+    const height = host.getBoundingClientRect().height;
+    const left = Math.max(VIEWPORT_MARGIN, Math.min(anchorRect.left, window.innerWidth - width - VIEWPORT_MARGIN));
+    let top = anchorRect.bottom + 8;
+    if (top + height > window.innerHeight - VIEWPORT_MARGIN) {
+      const above = (anchorRect.top ?? anchorRect.bottom) - height - 8;
+      top = above >= VIEWPORT_MARGIN ? above : Math.max(VIEWPORT_MARGIN, window.innerHeight - height - VIEWPORT_MARGIN);
+    }
+    host.style.left = `${left}px`;
+    host.style.top = `${top}px`;
   }
 
   function baseStyles() {
     return `
       .card {
-        width: 320px;
+        box-sizing: border-box;
+        width: min(${CARD_WIDTH}px, calc(100vw - ${VIEWPORT_MARGIN * 2}px));
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         background: ${PALETTE.surface};
         color: ${PALETTE.ink};
@@ -86,60 +116,59 @@
     cards.delete(requestId);
   }
 
-  function renderLoading(requestId) {
+  // Replaces the card's contents - a header row (headerContent + close
+  // button) and optional nodes below it - then re-positions it for its new
+  // height.
+  function render(requestId, headerContent, extra = []) {
     const entry = cards.get(requestId);
     if (!entry) return;
-    entry.shadow.innerHTML = `
-      <style>${baseStyles()}</style>
-      <div class="card">
-        <div class="row">
-          <div class="row" style="gap:8px;"><span class="pulse"></span><span>Verifying…</span></div>
-          <button class="close" data-close>&times;</button>
-        </div>
-      </div>
-    `;
-    entry.shadow.querySelector("[data-close]").addEventListener("click", () => closeCard(requestId));
+    const close = el("button", { className: "close", text: "\u00d7", attrs: { "aria-label": "Close" } });
+    close.addEventListener("click", () => closeCard(requestId));
+    entry.shadow.replaceChildren(
+      el("style", { text: baseStyles() }),
+      el("div", { className: "card" }, [el("div", { className: "row" }, [headerContent, close]), ...extra])
+    );
+    positionCard(entry);
   }
 
-  function renderResult(requestId, result, websiteOrigin) {
-    const entry = cards.get(requestId);
-    if (!entry) return;
-    const color = verdictColor(result.verdict_label);
-    const explanation =
-      result.explanation.length > 220 ? `${result.explanation.slice(0, 220)}…` : result.explanation;
+  function renderLoading(requestId) {
+    render(
+      requestId,
+      el("div", { className: "row", style: "gap:8px;" }, [el("span", { className: "pulse" }), el("span", { text: "Verifying…" })])
+    );
+  }
 
-    entry.shadow.innerHTML = `
-      <style>${baseStyles()}</style>
-      <div class="card">
-        <div class="row">
-          <div class="score" style="color:${color}">${Math.round(result.trust_score)}</div>
-          <button class="close" data-close>&times;</button>
-        </div>
-        <span class="badge" style="background:${color}1a; color:${color};">
-          ${(result.verdict_label || "").replace(/_/g, " ")}
-        </span>
-        <div class="explanation">${explanation}</div>
-        <a class="link" href="${websiteOrigin}/result/${result.run_id}" target="_blank" rel="noopener noreferrer">
-          View full report →
-        </a>
-      </div>
-    `;
-    entry.shadow.querySelector("[data-close]").addEventListener("click", () => closeCard(requestId));
+  const RUN_ID_PATTERN = /^[0-9a-f-]{36}$/i;
+
+  function renderResult(requestId, result, websiteOrigin) {
+    const color = verdictColor(result.verdict_label);
+    const explanation = String(result.explanation || "");
+    const extra = [
+      el("span", {
+        className: "badge",
+        style: `background: color-mix(in srgb, ${color} 10%, transparent); color: ${color};`,
+        text: String(result.verdict_label || "").replace(/_/g, " "),
+      }),
+      el("div", {
+        className: "explanation",
+        text: explanation.length > 220 ? `${explanation.slice(0, 220)}…` : explanation,
+      }),
+    ];
+    const runId = String(result.run_id || "");
+    if (RUN_ID_PATTERN.test(runId)) {
+      extra.push(
+        el("a", {
+          className: "link",
+          text: "View full report →",
+          attrs: { href: `${websiteOrigin}/result/${runId}`, target: "_blank", rel: "noopener noreferrer" },
+        })
+      );
+    }
+    render(requestId, el("div", { className: "score", style: `color:${color}`, text: String(Math.round(Number(result.trust_score) || 0)) }), extra);
   }
 
   function renderError(requestId, message) {
-    const entry = cards.get(requestId);
-    if (!entry) return;
-    entry.shadow.innerHTML = `
-      <style>${baseStyles()}</style>
-      <div class="card">
-        <div class="row">
-          <span class="muted">${message}</span>
-          <button class="close" data-close>&times;</button>
-        </div>
-      </div>
-    `;
-    entry.shadow.querySelector("[data-close]").addEventListener("click", () => closeCard(requestId));
+    render(requestId, el("span", { className: "muted", text: String(message || "Something went wrong.") }));
   }
 
   function selectionAnchorRect() {
@@ -208,7 +237,7 @@
       if (rect.width < 10 || rect.height < 10) return;
 
       const requestId = crypto.randomUUID();
-      createCard(requestId, { left: rect.x, bottom: rect.y + rect.height });
+      createCard(requestId, { left: rect.x, top: rect.y, bottom: rect.y + rect.height });
       chrome.runtime.sendMessage({
         type: "REGION_CAPTURED",
         requestId,

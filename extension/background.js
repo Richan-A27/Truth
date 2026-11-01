@@ -19,15 +19,39 @@ async function ensureContentScript(tabId) {
   }
 }
 
+// Matches the backend's minimum (app/pipeline/stage1_input.py) so a too-short
+// selection gets a clear message instead of a server error.
+const MIN_CONTENT_CHARS = 10;
+
+// FastAPI returns `detail` as a string for raised errors but as a list of
+// {msg, ...} objects for request validation errors.
+function describeError(data) {
+  const detail = data && data.detail;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail) && detail.length) {
+    return detail.map((d) => (d && d.msg) || "").filter(Boolean).join("; ");
+  }
+  return "The verification service rejected this request.";
+}
+
 async function verifyText(text) {
-  const res = await fetch(`${CONFIG.API_BASE_URL}/verify`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ content: text }),
-  });
+  const content = text.trim();
+  if (content.length < MIN_CONTENT_CHARS) {
+    throw new Error("Select a little more text — at least a short sentence.");
+  }
+  let res;
+  try {
+    res = await fetch(`${CONFIG.API_BASE_URL}/verify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content }),
+    });
+  } catch {
+    throw new Error("Couldn't reach the verification service — is the backend running?");
+  }
   const data = await res.json().catch(() => null);
   if (!res.ok) {
-    throw new Error((data && data.detail) || "The verification service rejected this request.");
+    throw new Error(describeError(data));
   }
   return data;
 }
