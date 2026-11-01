@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug builds only: plain HTTP to any host, so the app can reach a
+     development backend on a laptop over Wi-Fi or a phone hotspot, whose
+     address changes from network to network. Release builds use
+     src/main/res/xml/network_security_config.xml (HTTPS only, apart from
+     the emulator's host address). -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

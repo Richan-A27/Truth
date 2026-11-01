@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Truth</string>
+    <string name="process_text_label">Verify with Truth</string>
+    <string name="share_label">Verify with Truth</string>
+</resources>
