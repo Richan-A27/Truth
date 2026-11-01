@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "Truth — Verify with Truth",
+  "version": "0.1.0",
+  "description": "Select any text or region on the web and verify it instantly with Truth's explainable fact-checking pipeline.",
+  "minimum_chrome_version": "109",
+  "permissions": ["contextMenus", "activeTab", "scripting", "storage", "offscreen"],
+  "host_permissions": ["http://localhost:8000/*", "http://127.0.0.1:8000/*"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content-script.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  }
+}

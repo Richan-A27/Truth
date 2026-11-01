@@ -1,0 +1,34 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: 250 250 248;
+  --bg-alt: 240 240 236;
+  --surface: 255 255 255;
+  --ink: 26 26 24;
+  --ink-muted: 92 92 87;
+  --accent: 166 43 63;
+  --accent-hover: 138 34 51;
+  --accent-soft: 243 220 224;
+  --border: 226 225 220;
+  --success: 63 122 82;
+  --danger: 139 30 30;
+  --neutral: 107 107 100;
+  color-scheme: light;
+}
+
+* {
+  border-color: rgb(var(--border));
+}
+
+body {
+  background: rgb(var(--bg));
+  color: rgb(var(--ink));
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
