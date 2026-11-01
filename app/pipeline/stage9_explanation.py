@@ -5,7 +5,6 @@ VERDICT_PHRASING = {
     "likely_true": "is supported by the evidence found",
     "likely_false": "is contradicted by the evidence found",
     "mixed": "has conflicting or inconclusive evidence",
-    "unverified": "could not be verified against any evidence",
 }
 
 
@@ -35,7 +34,12 @@ def build_deterministic_explanation(result: ClaimTrustResult) -> str:
     contradicting = result.contradicting_evidence
     neutral_count = result.breakdown.get("neutral_count", 0)
 
-    phrasing = VERDICT_PHRASING.get(result.verdict_label, "was evaluated")
+    if result.verdict_label == "likely_false" and not contradicting:
+        # Reached via absence of support rather than an actual contradiction
+        # (see stage8_trust_scoring.NO_SUPPORT_SCORE) - phrase it as such.
+        phrasing = "could not be backed up by any supporting evidence"
+    else:
+        phrasing = VERDICT_PHRASING.get(result.verdict_label, "was evaluated")
     parts = [
         f'The claim "{result.claim.text}" scored {result.trust_score}/100 and {phrasing}.',
         f"{len(supporting)} supporting, {len(contradicting)} contradicting and "
@@ -54,6 +58,10 @@ def build_deterministic_explanation(result: ClaimTrustResult) -> str:
             parts.append(line)
 
     if not supporting and not contradicting:
-        parts.append("No evidence directly addressed the claim, so no verdict could be reached.")
+        parts.append(
+            "No evidence was found to support the claim, which counts against it."
+            if neutral_count == 0
+            else "The evidence found didn't address the claim directly, so no support for it was confirmed."
+        )
 
     return " ".join(parts)

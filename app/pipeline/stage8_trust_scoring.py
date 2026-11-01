@@ -18,6 +18,13 @@ LABEL_SIGN = {"entailment": 1.0, "contradiction": -1.0, "neutral": 0.0}
 LIKELY_TRUE_THRESHOLD = 70
 LIKELY_FALSE_THRESHOLD = 30
 
+# Score assigned when no evidence supports the claim - either none was found
+# at all, or none of what was found rose to entailment/contradiction. The
+# product's stance is that silence isn't neutral: a claim actively checked
+# against real sources and left unbacked leans false rather than "unverified",
+# so this sits well inside the likely_false bucket rather than at a neutral 50.
+NO_SUPPORT_SCORE = 20
+
 # Stops a single confident-but-wrong NLI call from producing a 0/100 verdict:
 # with n decisive items the score keeps n/(n+k) of its raw magnitude. Kept
 # small deliberately - at k=2.0 this over-shrank real verdicts (a clearly
@@ -117,8 +124,8 @@ def score_claim(claim: Claim, verdicts: list[NLIVerdict]) -> ClaimTrustResult:
     if not verdicts:
         return ClaimTrustResult(
             claim=claim,
-            trust_score=50,
-            verdict_label="unverified",
+            trust_score=NO_SUPPORT_SCORE,
+            verdict_label="likely_false",
             supporting_evidence=[],
             contradicting_evidence=[],
             explanation="",
@@ -127,7 +134,7 @@ def score_claim(claim: Claim, verdicts: list[NLIVerdict]) -> ClaimTrustResult:
                 "source_reliability_weight": 0.0,
                 "confidence_weight": 0.0,
                 "reason": "no evidence found",
-                "verdict_label": "unverified",
+                "verdict_label": "likely_false",
             },
         )
 
@@ -170,11 +177,18 @@ def score_claim(claim: Claim, verdicts: list[NLIVerdict]) -> ClaimTrustResult:
     evidence_confidence = decisive_count / (decisive_count + EVIDENCE_SHRINKAGE_CONSTANT)
     normalized *= evidence_confidence
 
-    trust_score = round(50 + normalized * 50)
+    if decisive_count == 0:
+        # Evidence was found and judged relevant, but none of it actually
+        # entails or contradicts the claim (all neutral) - the claim goes
+        # unbacked either way, so it's scored the same as finding no
+        # evidence at all rather than landing at a neutral 50.
+        trust_score = NO_SUPPORT_SCORE
+    else:
+        trust_score = round(50 + normalized * 50)
     trust_score = max(0, min(100, trust_score))
 
     if decisive_count == 0:
-        verdict_label = "unverified"
+        verdict_label = "likely_false"
     elif trust_score >= LIKELY_TRUE_THRESHOLD:
         verdict_label = "likely_true"
     elif trust_score <= LIKELY_FALSE_THRESHOLD:
