@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Fraunces, Inter } from "next/font/google";
 import { AuthProvider } from "@/context/AuthContext";
+import { MotionProvider } from "@/components/MotionProvider";
 import { Navbar } from "@/components/Navbar";
 import "./globals.css";
 
@@ -18,7 +19,7 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "Truth — Explainable Fact Verification",
   description:
-    "A 9-stage AI pipeline that extracts claims, gathers evidence, and produces an explainable trust score in under 2 seconds.",
+    "A 9-stage AI pipeline that extracts claims, gathers evidence, and produces an explainable trust score.",
 };
 
 export default function RootLayout({
@@ -29,10 +30,12 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${fraunces.variable} ${inter.variable}`}>
       <body className="font-sans antialiased bg-bg text-ink">
-        <AuthProvider>
-          <Navbar />
-          {children}
-        </AuthProvider>
+        <MotionProvider>
+          <AuthProvider>
+            <Navbar />
+            {children}
+          </AuthProvider>
+        </MotionProvider>
       </body>
     </html>
   );

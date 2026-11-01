@@ -1,3 +1,6 @@
+"use client";
+
+import { motion } from "framer-motion";
 import type { VerificationResponse } from "@/lib/types";
 import { Badge } from "./ui/Badge";
 import { ClaimCard } from "./ClaimCard";
@@ -15,7 +18,7 @@ export function VerificationResult({
   const preview = contentPreview ?? result.claims[0]?.claim.text ?? result.explanation;
 
   return (
-    <div>
+    <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
       <div className="flex flex-col items-center gap-4 text-center sm:flex-row sm:text-left">
         <TrustScoreGauge score={result.trust_score} size={96} />
         <div>
@@ -39,6 +42,6 @@ export function VerificationResult({
           ))}
         </div>
       )}
-    </div>
+    </motion.div>
   );
 }

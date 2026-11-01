@@ -31,4 +31,12 @@ body {
   .text-balance {
     text-wrap: balance;
   }
+
+  /* faint dotted paper behind the hero, fading out towards the edges */
+  .bg-dot-grid {
+    background-image: radial-gradient(rgb(var(--ink) / 0.09) 1px, transparent 1px);
+    background-size: 22px 22px;
+    mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, black 30%, transparent 75%);
+    -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, black 30%, transparent 75%);
+  }
 }

@@ -7,16 +7,10 @@ import type { VerificationResponse } from "@/lib/types";
 import { Button } from "./ui/Button";
 import { Card } from "./ui/Card";
 import { Reveal } from "./ui/Reveal";
-import { TrustScoreGauge } from "./ui/TrustScoreGauge";
+import { PipelineProgress } from "./PipelineProgress";
 import { VerificationResult } from "./VerificationResult";
 
 type Status = "idle" | "loading" | "success" | "error";
-
-const LOADING_MESSAGES = [
-  "Extracting claims…",
-  "Searching independent evidence…",
-  "Weighing what supports and contradicts…",
-];
 
 const PENDING_SAVE_KEY = "truth:pendingSave";
 
@@ -25,7 +19,6 @@ export function LiveDemo() {
   const [status, setStatus] = useState<Status>("idle");
   const [result, setResult] = useState<VerificationResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [messageIndex, setMessageIndex] = useState(0);
 
   // Restores an in-progress result after a signed-out "save" round-trips
   // through /sign-in — the response is cached here, not re-fetched.
@@ -49,12 +42,6 @@ export function LiveDemo() {
     setStatus("loading");
     setError(null);
     setResult(null);
-    setMessageIndex(0);
-
-    const interval = setInterval(() => {
-      setMessageIndex((i) => (i + 1) % LOADING_MESSAGES.length);
-    }, 1400);
-
     try {
       const data = await callVerify(text.trim());
       setResult(data);
@@ -62,8 +49,6 @@ export function LiveDemo() {
     } catch (err) {
       setError(err instanceof VerifyError ? err.message : "Something went wrong.");
       setStatus("error");
-    } finally {
-      clearInterval(interval);
     }
   };
 
@@ -120,9 +105,8 @@ export function LiveDemo() {
           </div>
 
           {status === "loading" && (
-            <div className="mt-8 flex flex-col items-center gap-4 border-t border-border pt-8">
-              <TrustScoreGauge score={0} loading size={96} />
-              <p className="text-sm text-ink-muted">{LOADING_MESSAGES[messageIndex]}</p>
+            <div className="mt-8 border-t border-border pt-8">
+              <PipelineProgress />
             </div>
           )}
 
