@@ -29,13 +29,28 @@ LIKELY_FALSE_THRESHOLD = 30
 
 
 async def _process_claim(
-    claim_text: str, order: int, session: AsyncSession, run_id, use_llm_explanation: bool = True
+    claim_text: str,
+    order: int,
+    session: AsyncSession,
+    run_id,
+    use_llm_explanation: bool = True,
+    db_lock: asyncio.Lock | None = None,
+    ml_lock: asyncio.Lock | None = None,
 ) -> ClaimTrustResult:
+    """`db_lock` / `ml_lock` let several claims run this concurrently: an
+    AsyncSession must not be used by two tasks at once, and the shared
+    tokenizers/models aren't safe to call from several threads at once. The
+    slow parts (network retrieval, LLM calls) stay outside both locks, so
+    claims still overlap where the time actually goes."""
     from app.schemas.claim import Claim
+
+    db_lock = db_lock or asyncio.Lock()
+    ml_lock = ml_lock or asyncio.Lock()
 
     claim = Claim(text=claim_text, order=order)
     claim.entities = await asyncio.to_thread(stage3_evidence_search.extract_entities, claim.text)
-    await repository.save_claim(session, run_id=run_id, claim=claim)
+    async with db_lock:
+        await repository.save_claim(session, run_id=run_id, claim=claim)
 
     # Wikidata resolution only feeds trust scoring (stage8), which runs well
     # after this - so it runs alongside evidence retrieval instead of before
@@ -44,10 +59,11 @@ async def _process_claim(
         stage3_evidence_search.search_all_sources(claim.text, entities=claim.entities),
         stage3_evidence_search.enrich_entities_with_wikidata(claim.entities),
     )
-    retrieved = await asyncio.to_thread(stage4_bm25_retrieval.rank_by_bm25, claim.text, documents)
-    ranked = await asyncio.to_thread(stage5_semantic_matching.rank_by_semantic_similarity, claim.text, retrieved)
-    reranked = await asyncio.to_thread(stage6_reranking.rerank, claim.text, ranked)
-    verdicts = await asyncio.to_thread(stage7_nli_verification.verify_claim, claim.text, reranked)
+    async with ml_lock:
+        retrieved = await asyncio.to_thread(stage4_bm25_retrieval.rank_by_bm25, claim.text, documents)
+        ranked = await asyncio.to_thread(stage5_semantic_matching.rank_by_semantic_similarity, claim.text, retrieved)
+        reranked = await asyncio.to_thread(stage6_reranking.rerank, claim.text, ranked)
+        verdicts = await asyncio.to_thread(stage7_nli_verification.verify_claim, claim.text, reranked)
     if get_settings().evidence_claim_resolution_enabled:
         try:
             verdicts = await stage7b_evidence_claim_resolution.resolve_ambiguous_verdicts(claim.text, verdicts)
@@ -57,7 +73,8 @@ async def _process_claim(
             logger.exception("Evidence-claim resolution failed for claim %r; keeping first-pass verdicts", claim.text)
 
     selected_urls = {v.evidence.url for v in verdicts}
-    await repository.save_evidence_items(session, claim_id=claim.id, verdicts=verdicts, selected=selected_urls)
+    async with db_lock:
+        await repository.save_evidence_items(session, claim_id=claim.id, verdicts=verdicts, selected=selected_urls)
 
     result = stage8_trust_scoring.score_claim(claim, verdicts)
     if verdicts and use_llm_explanation:
@@ -72,7 +89,8 @@ async def _process_claim(
         result.explanation = stage9_explanation.build_deterministic_explanation(result)
     result.breakdown["explanation"] = result.explanation
 
-    await repository.save_trust_breakdown(session, claim_id=claim.id, result=result)
+    async with db_lock:
+        await repository.save_trust_breakdown(session, claim_id=claim.id, result=result)
     return result
 
 
@@ -85,9 +103,7 @@ def _aggregate(claim_results: list[ClaimTrustResult]) -> tuple[int, str, str]:
         return only.trust_score, only.verdict_label, only.explanation
 
     avg_score = round(sum(r.trust_score for r in claim_results) / len(claim_results))
-    if all(r.verdict_label == "unverified" for r in claim_results):
-        label = "unverified"
-    elif avg_score >= LIKELY_TRUE_THRESHOLD:
+    if avg_score >= LIKELY_TRUE_THRESHOLD:
         label = "likely_true"
     elif avg_score <= LIKELY_FALSE_THRESHOLD:
         label = "likely_false"
@@ -116,12 +132,25 @@ async def _verify_claims(
     try:
         claim_texts = await claim_texts_provider()
 
-        claim_results = []
-        for i, text in enumerate(claim_texts):
-            result = await _process_claim(
-                text, i, session, run.id, use_llm_explanation=use_llm_explanation
+        # claims are independent, so their network/LLM waits overlap instead
+        # of queueing - a 4-claim article costs about one claim's latency
+        db_lock, ml_lock = asyncio.Lock(), asyncio.Lock()
+        claim_results = list(
+            await asyncio.gather(
+                *(
+                    _process_claim(
+                        text,
+                        i,
+                        session,
+                        run.id,
+                        use_llm_explanation=use_llm_explanation,
+                        db_lock=db_lock,
+                        ml_lock=ml_lock,
+                    )
+                    for i, text in enumerate(claim_texts)
+                )
             )
-            claim_results.append(result)
+        )
 
         trust_score, verdict_label, explanation = _aggregate(claim_results)
         duration_ms = int((time.monotonic() - start) * 1000)

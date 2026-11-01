@@ -76,3 +76,8 @@ def test_specific_detail_mismatch_is_not_scored_as_contradiction():
     )
     verdicts = verify_claim("Albert Einstein developed the theory of general relativity.", [evidence])
     assert verdicts[0].label == "entailment"
+
+
+def test_no_evidence_phrasing_counts_as_hedge():
+    assert _is_hedged("There is no evidence that COVID-19 vaccination causes cancer.") is True
+    assert _is_hedged("The idea is not supported by cancer research.") is True

@@ -53,9 +53,15 @@ def _eligible_verdicts(verdicts: list[NLIVerdict], max_docs: int) -> list[NLIVer
     return ambiguous[:max_docs]
 
 
+def _evidence_text(verdict: NLIVerdict) -> str:
+    evidence = verdict.evidence
+    text = f"{evidence.title}. {evidence.representative_paragraph or evidence.snippet}"
+    return text[: get_settings().evidence_claim_resolution_max_chars]
+
+
 async def _extract_one(claim_text: str, verdict: NLIVerdict, timeout: float) -> str:
     evidence = verdict.evidence
-    evidence_text = f"{evidence.title}. {evidence.representative_paragraph or evidence.snippet}"
+    evidence_text = _evidence_text(verdict)
     try:
         return await asyncio.wait_for(
             asyncio.to_thread(get_llm_client().extract_evidence_claim, claim_text, evidence_text),
@@ -121,11 +127,23 @@ async def resolve_ambiguous_verdicts(
         # means the sentence is describing a myth/misconception, not
         # asserting it, so a reading of "entailment" actually means the
         # source refutes the claim
-        if entailment >= ENTAILMENT_TRUST_THRESHOLD and _is_hedged(sentence):
+        if entailment >= ENTAILMENT_TRUST_THRESHOLD and _is_hedged(sentence) and not _is_hedged(claim_text):
             contradiction = max(contradiction, entailment)
             entailment = 0.0
 
-        if entailment >= ENTAILMENT_TRUST_THRESHOLD:
+        # the source frames the topic as misinformation/myth but the LLM's
+        # one-sentence rewrite dropped that framing - confirmed live: a
+        # paragraph about "misinformation suggesting that COVID-19 might
+        # alter DNA" came back as "mRNA vaccines introduce genetic material
+        # into cells", which NLI then read as 0.98 support for the myth.
+        # Not trusted as support; the first-pass verdict stands.
+        if (
+            entailment >= ENTAILMENT_TRUST_THRESHOLD
+            and _is_hedged(_evidence_text(verdict))
+            and not _is_hedged(claim_text)
+        ):
+            label, confidence, refined = verdict.label, verdict.confidence, False
+        elif entailment >= ENTAILMENT_TRUST_THRESHOLD:
             label, confidence, refined = "entailment", entailment, True
         elif contradiction >= CONTRADICTION_TRUST_THRESHOLD:
             label, confidence, refined = "contradiction", contradiction, True

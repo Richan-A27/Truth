@@ -22,6 +22,26 @@ def _no_llm_query_fallback(monkeypatch):
     monkeypatch.setattr("app.pipeline.stage3_evidence_search._llm_augmented_search", disabled)
 
 
+async def test_default_sources_exclude_academic_apis(monkeypatch):
+    async def must_not_run(query, limit=5):
+        raise AssertionError("academic source queried by default")
+
+    async def fake_news(query, limit=5):
+        return [_doc("google_news", "news1")]
+
+    async def fake_wiki(query, limit=3):
+        return [_doc("wikipedia", "wiki1")]
+
+    monkeypatch.setattr("app.clients.openalex_client.search", must_not_run)
+    monkeypatch.setattr("app.clients.crossref_client.search", must_not_run)
+    monkeypatch.setattr("app.clients.google_news_client.search", fake_news)
+    monkeypatch.setattr("app.clients.wikipedia_client.search", fake_wiki)
+
+    docs = await stage3_evidence_search.search_all_sources("some claim")
+
+    assert {d.source for d in docs} == {"google_news", "wikipedia"}
+
+
 async def test_search_all_sources_pools_results(monkeypatch):
     async def fake_openalex(query, limit=5):
         return [_doc("openalex", "paper1")]
@@ -40,7 +60,9 @@ async def test_search_all_sources_pools_results(monkeypatch):
     monkeypatch.setattr("app.clients.google_news_client.search", fake_news)
     monkeypatch.setattr("app.clients.wikipedia_client.search", fake_wiki)
 
-    docs = await stage3_evidence_search.search_all_sources("some claim")
+    docs = await stage3_evidence_search.search_all_sources(
+        "some claim", sources=("openalex", "crossref", "google_news", "wikipedia")
+    )
 
     sources = {d.source for d in docs}
     assert sources == {"openalex", "crossref", "google_news", "wikipedia"}
@@ -65,7 +87,9 @@ async def test_search_all_sources_degrades_gracefully_on_failure(monkeypatch):
     monkeypatch.setattr("app.clients.google_news_client.search", fake_news)
     monkeypatch.setattr("app.clients.wikipedia_client.search", fake_wiki)
 
-    docs = await stage3_evidence_search.search_all_sources("some claim")
+    docs = await stage3_evidence_search.search_all_sources(
+        "some claim", sources=("openalex", "crossref", "google_news", "wikipedia")
+    )
 
     sources = {d.source for d in docs}
     assert sources == {"crossref", "google_news", "wikipedia"}

@@ -76,7 +76,8 @@ def generate_explanation(
 SEARCH_QUERY_PROMPT = """Given the following factual claim, write the single best short web/encyclopedia \
 search query (3-8 words) to find evidence that would confirm or refute it. Prefer specific, well-known \
 terminology over vague paraphrasing - e.g. for a claim about vaccines and autism, prefer "MMR vaccine autism \
-controversy" over just "vaccines". Return ONLY the query text, with no quotes, labels, or explanation.
+controversy" over just "vaccines". Name the topic itself; don't pad the query with words like "evidence", \
+"confirmation", "fact check", "true" or "myth". Return ONLY the query text, with no quotes, labels, or explanation.
 
 Claim: "{claim_text}"
 """
@@ -103,6 +104,10 @@ directly (e.g. "Einstein was in fact a strong mathematics student; the story tha
 - NOT "the claim that Einstein failed math is a myth" and NOT a repetition of the myth itself).
 - If the evidence is phrased as a question that is never actually answered in the passage, or does not \
 address the claim's topic at all, respond with exactly: UNDETERMINED
+- Address the claim's SPECIFIC assertion. If the evidence takes a position on it, state that position \
+(e.g. for the claim "mRNA vaccines alter human DNA", write "mRNA vaccines do not alter human DNA" - NOT a \
+related true fact such as "mRNA vaccines deliver genetic instructions to cells", which sidesteps the claim). \
+Only if the evidence never addresses the specific assertion, state its closest relevant fact.
 - Never end your sentence with a question mark.
 - Do not just restate the claim in different words - state what the EVIDENCE says, which may support, \
 refute, or say nothing about the claim.
@@ -138,6 +143,9 @@ def extract_evidence_claim(claim_text: str, evidence_text: str) -> str:
 CLAIM_EXTRACTION_PROMPT = """You are a fact-checking assistant. Read the text below and extract every \
 discrete, checkable factual claim it makes (statements that could in principle be verified as true or \
 false against evidence). Ignore opinions, questions, and rhetorical statements.
+
+Each claim must be self-contained and understandable on its own: replace pronouns and vague references \
+("it", "he", "the company", "this year") with the specific name, place or date they refer to in the text.
 
 Respond with ONLY a JSON object of this exact shape, nothing else:
 {{"claims": ["claim one", "claim two"]}}

@@ -144,6 +144,25 @@ def build_entity_query(entities: list[ExtractedEntity]) -> str:
     return " ".join(terms)
 
 
+def build_subject_query(claim_text: str) -> str:
+    """The claim's grammatical subject, minus leading determiners - a topic
+    query for claims with no usable named entities. "The speed of light is
+    approximately 300,000 kilometers per second." has no entities at all, so
+    the only Wikipedia queries were the whole sentence (which surfaced Ole
+    Rømer and "Speed of electricity") and the LLM's query; "speed of light"
+    retrieves the canonical article directly."""
+    doc = get_spacy_nlp()(claim_text)
+    subject = next((t for t in doc if t.dep_ in ("nsubj", "nsubjpass")), None)
+    if subject is None or subject.pos_ == "PRON":
+        return ""
+    tokens = [t for t in subject.subtree if t.dep_ != "punct"]
+    while tokens and tokens[0].dep_ == "det":
+        tokens = tokens[1:]
+    if not tokens:
+        return ""
+    return doc[tokens[0].i : tokens[-1].i + 1].text
+
+
 async def search_all_sources(
     claim_text: str,
     *,
@@ -156,8 +175,16 @@ async def search_all_sources(
     # from ones that don't). OpenAlex, CrossRef, and Google News replace
     # them: all three tested reliably healthy, need no API key, and cover
     # the same two roles (academic + news) that GDELT/Semantic Scholar did.
+    #
+    # OpenAlex and CrossRef have since been dropped too. Measured over the 37
+    # eval claims, CrossRef cast 11 non-neutral votes and 7 were wrong: paper
+    # titles that quote a myth verbatim ("The moon is made of green cheese.")
+    # score as near-certain entailment, as do off-topic papers. It was the
+    # sole cause of the green-cheese miss. OpenAlex mostly lost the race to
+    # Google News's grace period and contributed nothing. Academic abstracts
+    # rarely state everyday facts plainly, which is what NLI needs.
     # Still callable explicitly via `sources=`.
-    sources: tuple[str, ...] = ("openalex", "crossref", "google_news", "wikipedia"),
+    sources: tuple[str, ...] = ("google_news", "wikipedia"),
 ) -> list[EvidenceDocument]:
     """Query the requested evidence sources concurrently; a failing source is
     logged and skipped rather than failing the whole claim."""
@@ -181,6 +208,10 @@ async def search_all_sources(
         wikipedia_tasks.append(asyncio.ensure_future(_wikipedia_search(claim_text)))
         if entity_query and entity_query.lower() != claim_text.lower():
             wikipedia_tasks.append(asyncio.ensure_future(_wikipedia_search(entity_query)))
+        if len(entity_query.split()) < MIN_QUERY_TOKENS:
+            subject_query = build_subject_query(claim_text)
+            if subject_query and subject_query.lower() not in (entity_query.lower(), claim_text.lower()):
+                wikipedia_tasks.append(asyncio.ensure_future(_wikipedia_search(subject_query)))
 
     # Scheduled now (not awaited) so it runs concurrently with the fast-source
     # race below rather than adding its own latency on top - total added time

@@ -73,10 +73,18 @@ def rank_by_semantic_similarity(
     rrf_scores = reciprocal_rank_fusion(bm25_scores, whole_snippet_scores)
 
     nlp = get_sentencizer()
-    sentence_scores = []
+    # one encode call for every document's sentences instead of one per
+    # document - per-call overhead dominates for these short inputs
+    all_sentences: list[str] = []
+    spans: list[tuple[int, int]] = []
     for doc in documents:
         sentences = [s.text.strip() for s in nlp(f"{doc.title}. {doc.snippet}").sents if s.text.strip()]
-        sentence_scores.append(_best_sentence_similarity(model, claim_embedding, sentences))
+        spans.append((len(all_sentences), len(all_sentences) + len(sentences)))
+        all_sentences.extend(sentences)
+    sims = np.zeros(0, dtype="float32")
+    if all_sentences:
+        sims = np.asarray(model.encode(all_sentences, normalize_embeddings=True, batch_size=64), dtype="float32") @ claim_embedding[0]
+    sentence_scores = [float(sims[a:b].max()) if b > a else 0.0 for a, b in spans]
 
     ranked = [
         RankedEvidence(

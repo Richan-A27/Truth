@@ -10,6 +10,11 @@ def get_llm_client() -> ModuleType:
     (extract_claims, generate_explanation), so callers don't need to care
     which one they get.
     """
-    from app.clients import gemini_client, ollama_client
+    from app.clients import gemini_client, groq_client, ollama_client
 
-    return ollama_client if get_settings().llm_backend == "ollama" else gemini_client
+    backend = get_settings().llm_backend
+    if backend == "ollama":
+        return ollama_client
+    if backend == "groq":
+        return groq_client
+    return gemini_client

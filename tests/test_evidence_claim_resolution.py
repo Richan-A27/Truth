@@ -213,6 +213,7 @@ async def test_max_docs_cap_limits_llm_calls(monkeypatch):
             {
                 "evidence_claim_resolution_max_docs": 2,
                 "evidence_claim_resolution_timeout_seconds": 5.0,
+                "evidence_claim_resolution_max_chars": 500,
             },
         )(),
     )
@@ -318,9 +319,34 @@ async def test_live_timeout_degrades_gracefully(monkeypatch):
         lambda: type(
             "S",
             (),
-            {"evidence_claim_resolution_max_docs": 3, "evidence_claim_resolution_timeout_seconds": 0.001},
+            {
+                "evidence_claim_resolution_max_docs": 3,
+                "evidence_claim_resolution_timeout_seconds": 0.001,
+                "evidence_claim_resolution_max_chars": 500,
+            },
         )(),
     )
     original = _verdict("neutral", cross_encoder_score=1.0, url="a")
     result = await stage7b.resolve_ambiguous_verdicts("some claim", [original])
     assert result[0] == original
+
+
+async def test_rewrite_of_hedged_evidence_is_not_trusted_as_support(monkeypatch):
+    # the source calls the claim misinformation; the LLM's rewrite dropped that
+    rewrite = "mRNA vaccines introduce genetic material into cells."
+    _patch_llm(monkeypatch, lambda claim, ev: rewrite)
+    _patch_sbert_no_echo(monkeypatch)
+    _patch_nli(monkeypatch, {rewrite: [10.0, 0.0, 0.0]})
+
+    verdicts = [
+        _verdict(
+            "neutral",
+            cross_encoder_score=1.0,
+            url="a",
+            snippet="Because of misinformation suggesting that COVID-19 might alter DNA, some academics objected.",
+        )
+    ]
+    result = await stage7b.resolve_ambiguous_verdicts("COVID-19 vaccines alter human DNA.", verdicts)
+
+    assert result[0].label == "neutral"
+    assert result[0].llm_refined is False

@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     gemini_model: str = "gemini-3.6-flash"
 
-    # "gemini" (cloud, fast, 20 req/day free tier) or "ollama" (local,
+    # "gemini" (cloud, fast, 20 req/day free tier), "groq" (cloud, fast), or "ollama" (local,
     # slow ~7-8s/call on this machine, no quota). Affects claim extraction,
     # explanation, and stage 7b's evidence-claim resolution (see
     # evidence_claim_resolution_enabled below) - the last of these can issue
@@ -20,6 +20,12 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "qwen2.5:7b"
     ollama_timeout_seconds: float = 60.0
+
+    # llm_backend="groq": hosted open-weights models, fast and with generous
+    # free-tier limits. gpt-oss-20b: fast, strong at instruction-following.
+    groq_api_key: str = ""
+    groq_model: str = "openai/gpt-oss-20b"
+    groq_timeout_seconds: float = 20.0
 
     # "current" (generic cross-encoder/nli-deberta-v3-base) or
     # "fact_verification" (same architecture/size class, fine-tuned on
@@ -41,7 +47,14 @@ class Settings(BaseSettings):
     # documents get an LLM call, taken in descending cross_encoder_score
     # order - stage 6 can retain up to 8 documents, and Ollama's ~7-8s/call
     # latency makes resolving all of them per claim impractical.
-    evidence_claim_resolution_max_docs: int = 3
+    # Lowered from 3 to 1: on Groq's free tier (200k tokens/day for
+    # gpt-oss-20b) three rewrites per claim exhausted the daily quota within
+    # a few eval runs, after which 7b silently stopped contributing.
+    evidence_claim_resolution_max_docs: int = 1
+    # Evidence text sent per rewrite is capped to this many characters - the
+    # reranker's best paragraph is already the relevant part, and the prompt
+    # is billed per token.
+    evidence_claim_resolution_max_chars: int = 500
     evidence_claim_resolution_timeout_seconds: float = 20.0
 
     database_url: str = "postgresql+asyncpg://truth_user:truth_pass@localhost:5432/truth_db"
@@ -78,6 +91,11 @@ class Settings(BaseSettings):
 
     app_env: str = "development"
     log_level: str = "INFO"
+
+    # Comma-separated list of origins allowed to call this API cross-origin
+    # (e.g. the web/ Next.js app in local dev). Plain str field, split at use
+    # time, to sidestep pydantic-settings' list-env-var parsing.
+    cors_allow_origins_raw: str = "http://localhost:3000"
 
 
 @lru_cache

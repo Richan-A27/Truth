@@ -62,6 +62,30 @@ def _select_relevant_sentences(claim_text: str, sentences: list[str]) -> list[tu
     return ranked[:TOP_SENTENCES_FOR_NLI]
 
 
+def _select_relevant_sentences_batch(
+    claim_text: str, candidates_per_doc: list[list[str]]
+) -> list[list[tuple[int, str]]]:
+    """Same selection as _select_relevant_sentences, but with a single SBERT
+    encode over every document's sentences rather than one call per document."""
+    needs_ranking = [i for i, c in enumerate(candidates_per_doc) if len(c) > TOP_SENTENCES_FOR_NLI]
+    selected = [list(enumerate(c)) for c in candidates_per_doc]
+    if not needs_ranking:
+        return selected
+    model = get_sbert_model()
+    flat = [s for i in needs_ranking for s in candidates_per_doc[i]]
+    embeddings = model.encode([claim_text] + flat, normalize_embeddings=True, batch_size=64)
+    claim_embedding, sentence_embeddings = embeddings[0], embeddings[1:]
+    similarities = sentence_embeddings @ claim_embedding
+    offset = 0
+    for i in needs_ranking:
+        n = len(candidates_per_doc[i])
+        sims = similarities[offset : offset + n]
+        offset += n
+        ranked = sorted(enumerate(candidates_per_doc[i]), key=lambda pair: -sims[pair[0]])
+        selected[i] = ranked[:TOP_SENTENCES_FOR_NLI]
+    return selected
+
+
 def _with_preceding_context(sentences: list[str], index: int) -> str:
     """Prepends the immediately preceding sentence, when there is one -
     restores context an anaphoric reference depends on, which plain
@@ -125,7 +149,13 @@ _HEDGE_MARKERS = (
     "refuted",
     "pseudoscien",  # pseudoscience / pseudoscientific
     "conspiracy theory",
+    "misinformation",
     "no scientific evidence",
+    # NLI reads "there is no evidence that COVID-19 vaccination causes X" as
+    # entailing "COVID-19 vaccines cause X" (0.98, confirmed live on the
+    # "Turbo cancer" article) - it keys on the shared words, not the negation
+    "no evidence",
+    "not supported by",
     "scientifically inaccurate",
     "archaic",
     "superseded by",
@@ -194,6 +224,51 @@ _CITATION_NOISE = re.compile(
 MIN_SENTENCE_CHARS = 25
 
 
+# Numbers the claim and an evidence sentence share within a rounding
+# tolerance. NLI models compare numbers as strings: "299,792 km/s" against a
+# claim of "approximately 300,000 kilometers per second" scores as confident
+# contradiction, which turned a textbook-true claim into 18/100.
+_NUMBER = re.compile(r"(?<![\w.])\d{1,3}(?:,\d{3})+(?:\.\d+)?(?![\w])|(?<![\w.,])\d+(?:\.\d+)?(?![\w,])")
+_APPROXIMATE = re.compile(r"\b(approximately|approx\.?|about|around|roughly|nearly|almost|some|close to|~)\b", re.IGNORECASE)
+# a hedged number ("approximately 300,000") is a rounding of the true value;
+# a bare one ("206 bones") is still allowed ordinary rounding slack
+APPROXIMATE_NUMBER_TOLERANCE = 0.05
+EXACT_NUMBER_TOLERANCE = 0.01
+
+
+def _numbers(text: str) -> list[float]:
+    return [float(m.replace(",", "")) for m in _NUMBER.findall(text)]
+
+
+def _is_year(value: float) -> bool:
+    return value.is_integer() and 1000 <= value <= 2100
+
+
+def _numbers_agree(claim_text: str, sentence: str) -> bool:
+    """True when every number in the claim has a close match in the sentence.
+
+    Years must match exactly - 2% of 1889 is ±38 years, and "built in 1887"
+    against a claim of 1889 is a real disagreement, not rounding. A claim
+    whose only numbers are years never qualifies: date-only agreement is
+    common in evidence that contradicts the claim on something else ("built
+    in 1889 in Paris" vs a claim of "built in 1889 in Berlin"), whereas the
+    rounding problem this exists for is about measured quantities."""
+    claim_numbers = _numbers(claim_text)
+    if not any(not _is_year(n) for n in claim_numbers):
+        return False
+    sentence_numbers = _numbers(sentence)
+    tolerance = APPROXIMATE_NUMBER_TOLERANCE if _APPROXIMATE.search(claim_text) else EXACT_NUMBER_TOLERANCE
+    for claimed in claim_numbers:
+        if _is_year(claimed):
+            if claimed not in sentence_numbers:
+                return False
+        elif not any(
+            not _is_year(found) and abs(found - claimed) <= tolerance * abs(claimed) for found in sentence_numbers
+        ):
+            return False
+    return True
+
+
 def _is_usable_sentence(sentence: str) -> bool:
     if len(sentence) < MIN_SENTENCE_CHARS:
         return False
@@ -245,15 +320,16 @@ def verify_claim(
     pairs: list[tuple[str, str]] = []
     owner_doc_index: list[int] = []
     sentence_texts: list[str] = []
-    for doc_index, doc in enumerate(documents):
-        candidates = _split_sentences(f"{doc.title}. {doc.snippet}")
-        for index, _ in _select_relevant_sentences(claim_text, candidates):
+    all_candidates = [_split_sentences(f"{doc.title}. {doc.snippet}") for doc in documents]
+    all_selected = _select_relevant_sentences_batch(claim_text, all_candidates)
+    for doc_index, (candidates, selected) in enumerate(zip(all_candidates, all_selected)):
+        for index, _ in selected:
             premise = _with_preceding_context(candidates, index)
             pairs.append((premise, claim_text))
             owner_doc_index.append(doc_index)
             sentence_texts.append(premise)
 
-    logits = model.predict(pairs)
+    logits = model.predict(pairs, batch_size=32)
     probs = _softmax(np.asarray(logits))
 
     contradiction_idx = labels.index("contradiction")
@@ -288,10 +364,22 @@ def verify_claim(
         # this specific sentence reads as entailing the claim, but it's
         # phrased as describing a myth/misconception - that's the source
         # refuting the claim, not confirming it, so redirect its vote
-        elif entailment >= ENTAILMENT_TRUST_THRESHOLD and _is_hedged(sentence_texts[i]):
+        # skipped when the claim itself carries the marker ("there is no
+        # evidence that vaccines cause autism"): then the shared hedge is
+        # agreement, not the source refuting the claim
+        elif (
+            entailment >= ENTAILMENT_TRUST_THRESHOLD
+            and _is_hedged(sentence_texts[i])
+            and not _is_hedged(claim_text)
+        ):
             contradiction = max(contradiction, entailment)
             entailment = 0.0
             hedge_redirected[doc_index] = True
+        # the sentence states the claim's own figures (within rounding), so
+        # whatever NLI read as contradiction is string-level number mismatch
+        # - "299,792" vs "300,000" - not a disagreement about the fact
+        elif contradiction >= CONTRADICTION_TRUST_THRESHOLD and _numbers_agree(claim_text, sentence_texts[i]):
+            contradiction = 0.0
 
         max_entailment[doc_index] = max(max_entailment[doc_index], entailment)
         max_contradiction[doc_index] = max(max_contradiction[doc_index], contradiction)
